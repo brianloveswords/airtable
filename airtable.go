@@ -94,17 +94,110 @@ func checkErrorResponse(b []byte) error {
 	return nil
 }
 
-// Resource does stuff too
-type Resource struct {
-	name      string
-	client    *Client
-	container interface{}
+/* Field Types */
+
+// Rating ...
+type Rating struct {
+	v int
+}
+
+// FromJSON ...
+func (f Rating) FromJSON() {}
+
+// Text ...
+type Text struct {
+	v string
+}
+
+// FromJSON ...
+func (f Text) FromJSON() {}
+
+// Attachment ...
+type Attachment struct {
+	v interface{}
+}
+
+// FromJSON ...
+func (f Attachment) FromJSON() {}
+
+// Checkbox ...
+type Checkbox struct {
+	v bool
+}
+
+// FromJSON ...
+func (f Checkbox) FromJSON() {}
+
+// MultipleSelect ...
+type MultipleSelect struct {
+	v []string
+}
+
+// FromJSON ...
+func (f MultipleSelect) FromJSON() {}
+
+// Date ...
+type Date struct {
+	v string
+}
+
+// FromJSON ...
+func (f Date) FromJSON() {}
+
+// FormulaResult ...
+type FormulaResult struct {
+	v interface{} // string or int or error
+}
+
+// FromJSON ...
+func (f FormulaResult) FromJSON() {}
+
+// RecordLink ...
+type RecordLink struct {
+	v []string
+}
+
+// FromJSON ...
+func (f RecordLink) FromJSON() {}
+
+// SingleSelect ...
+type SingleSelect struct {
+	v string
+}
+
+// FromJSON ...
+func (f SingleSelect) FromJSON() {}
+
+// AnyField ...
+type AnyField struct {
+	v interface{}
+}
+
+// FromJSON ...
+func (f AnyField) FromJSON() {}
+
+// Field ...
+type Field interface {
+	FromJSON()
+}
+
+// Record ...
+type Record map[string]Field
+
+// Get ...
+func (r *Record) Get(k string) Field {
+	return map[string]Field(*r)[k]
+}
+
+// Set ...
+func (r *Record) Set(k string, v interface{}) {
+	map[string]Field(*r)[k] = AnyField{v}
 }
 
 // GetResponse contains the response from requesting a resource
 type GetResponse struct {
-	ID     string      `json:"id"`
-	Fields interface{} `json:"fields"`
+	ID     string                 `json:"id"`
+	Fields map[string]interface{} `json:"fields"`
 }
 
 // Get returns information about a resource
@@ -115,19 +208,32 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 		return nil, err
 	}
 
-	fmt.Printf("%s\n", bytes)
-
 	var resp GetResponse
 	err = json.Unmarshal(bytes, &resp)
 	if err != nil {
 		return nil, err
 	}
+
+	for k, v := range resp.Fields {
+		fmt.Printf("%v: %v\n", k, v)
+		r.record.Set(k, v)
+		fmt.Printf("record: %q", r.record.Get(k))
+		fmt.Print("\n\n")
+	}
+
 	return &resp, nil
 }
 
+// Resource ...
+type Resource struct {
+	name   string
+	client *Client
+	record *Record
+}
+
 // NewResource returns a new resource manipulator
-func (c *Client) NewResource(name string) Resource {
-	return Resource{name, c, nil}
+func (c *Client) NewResource(name string, record Record) Resource {
+	return Resource{name, c, &record}
 }
 
 // RequestBytes makes a raw request to the Airtable API
@@ -170,3 +276,5 @@ func (c *Client) RequestBytes(resource string, options QueryEncoder) ([]byte, er
 
 	return bytes, nil
 }
+
+//  LocalWords:  FromJSON

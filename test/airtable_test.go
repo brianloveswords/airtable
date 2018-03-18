@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -13,17 +12,22 @@ func TestClientResource(t *testing.T) {
 		APIKey: os.Getenv("AIRTABLE_TEST_KEY"),
 		BaseID: os.Getenv("AIRTABLE_TEST_BASE"),
 	}
-	main := client.NewResource("Main")
 
-	// main.Int("Rating")
-	// main.String("Name")
-	// main.String("Notes")
-	// main.StringArray("Cats")
+	main := client.NewResource("Main", airtable.Record{
+		"Rating":      airtable.Rating{},
+		"Name":        airtable.Text{},
+		"Notes":       airtable.Text{},
+		"Attachments": airtable.Attachment{},
+		"Check":       airtable.Checkbox{},
+		"Animals":     airtable.MultipleSelect{},
+		"When":        airtable.Date{},
+		"Formula":     airtable.FormulaResult{},
+		"Cats":        airtable.RecordLink{},
+	})
 
-	record, err := main.Get("recfUW0mFSobdU9PX", nil)
+	main.Get("recfUW0mFSobdU9PX", nil)
 
-	fmt.Println("err:", err)
-	fmt.Println("record:", record)
+	// fmt.Println("err:", err)
 
 	t.Skipf("skipping")
 }
