@@ -18,7 +18,7 @@ var (
 	update = flag.Bool("update", false, "update the tests")
 )
 
-func TestRawRequest(t *testing.T) {
+func TestClientRequestBytes(t *testing.T) {
 	tests := []struct {
 		name     string
 		method   string
