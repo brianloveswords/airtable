@@ -26,15 +26,16 @@ func TestRawRequest(t *testing.T) {
 		options  func() airtable.QueryEncoder
 		snapshot string
 		notlike  string
+		testerr  func(error) bool
 	}{
 		{
-			name:     "Dishes, no options",
+			name:     "no options",
 			method:   "GET",
 			resource: "Dishes",
 			snapshot: "dishes.snapshot",
 		},
 		{
-			name:     "Dishes, name",
+			name:     "field filter: only name",
 			method:   "GET",
 			resource: "Dishes",
 			options: func() airtable.QueryEncoder {
@@ -46,7 +47,7 @@ func TestRawRequest(t *testing.T) {
 			notlike:  "dishes.snapshot",
 		},
 		{
-			name:     "Dishes, name and notes",
+			name:     "field filter: name and notes",
 			method:   "GET",
 			resource: "Dishes",
 			options: func() airtable.QueryEncoder {
@@ -57,6 +58,20 @@ func TestRawRequest(t *testing.T) {
 			},
 			snapshot: "dishes_fields-name-notes.snapshot",
 			notlike:  "dishes_fields-name.snapshot",
+		},
+		{
+			name:     "request error",
+			method:   "GET",
+			resource: "Dishes",
+			options: func() airtable.QueryEncoder {
+				q := make(url.Values)
+				q.Add("fields", "[this will make it fail]")
+				return q
+			},
+			testerr: func(err error) bool {
+				_, ok := err.(airtable.ErrClientRequestError)
+				return ok
+			},
 		},
 	}
 
@@ -72,14 +87,26 @@ func TestRawRequest(t *testing.T) {
 				options = tt.options()
 			}
 
-			output, err := client.Request(tt.resource, options)
+			output, err := client.RequestBytes(tt.resource, options)
 			if err != nil {
-				t.Fatal(err)
+				if tt.testerr == nil {
+					t.Fatal(err)
+				}
+
+				if !tt.testerr(err) {
+					t.Fatal("error mismatch: did not expect", err)
+				}
 			}
+
+			if tt.snapshot == "" {
+				return
+			}
+
 			if *update {
 				fmt.Println("<<updating snapshots>>")
 				writeFixture(t, tt.snapshot, output)
 			}
+
 			actual := string(output)
 			expected := loadFixture(t, tt.snapshot)
 			if !reflect.DeepEqual(actual, expected) {

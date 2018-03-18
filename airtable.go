@@ -4,6 +4,7 @@
 package airtable
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -37,6 +38,16 @@ func (e ErrClientSetupError) Error() string {
 	return e.msg
 }
 
+// ErrClientRequestError is returned when the client runs into
+// problems with a request
+type ErrClientRequestError struct {
+	msg string
+}
+
+func (e ErrClientRequestError) Error() string {
+	return e.msg
+}
+
 func (c *Client) checkSetup() error {
 	if c.BaseID == "" {
 		return ErrClientSetupError{"Client missing BaseID"}
@@ -65,8 +76,26 @@ type QueryEncoder interface {
 	Encode() string
 }
 
-// Request makes a raw request to the Airtable API
-func (c *Client) Request(resource string, options QueryEncoder) ([]byte, error) {
+type errorResponse struct {
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func checkErrorResponse(b []byte) error {
+	var reqerr errorResponse
+	if jsonerr := json.Unmarshal(b, &reqerr); jsonerr != nil {
+		return jsonerr
+	}
+	if reqerr.Error.Type != "" {
+		return ErrClientRequestError{reqerr.Error.Message}
+	}
+	return nil
+}
+
+// RequestBytes makes a raw request to the Airtable API
+func (c *Client) RequestBytes(resource string, options QueryEncoder) ([]byte, error) {
 	var err error
 
 	if err = c.checkSetup(); err != nil {
@@ -98,5 +127,10 @@ func (c *Client) Request(resource string, options QueryEncoder) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+
+	if err = checkErrorResponse(bytes); err != nil {
+		return bytes, err
+	}
+
 	return bytes, nil
 }
