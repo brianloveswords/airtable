@@ -94,6 +94,42 @@ func checkErrorResponse(b []byte) error {
 	return nil
 }
 
+// Resource does stuff too
+type Resource struct {
+	name      string
+	client    *Client
+	container interface{}
+}
+
+// GetResponse contains the response from requesting a resource
+type GetResponse struct {
+	ID     string      `json:"id"`
+	Fields interface{} `json:"fields"`
+}
+
+// Get returns information about a resource
+func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
+	fullid := r.name + "/" + id
+	bytes, err := r.client.RequestBytes(fullid, options)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("%s\n", bytes)
+
+	var resp GetResponse
+	err = json.Unmarshal(bytes, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// NewResource returns a new resource manipulator
+func (c *Client) NewResource(name string) Resource {
+	return Resource{name, c, nil}
+}
+
 // RequestBytes makes a raw request to the Airtable API
 func (c *Client) RequestBytes(resource string, options QueryEncoder) ([]byte, error) {
 	var err error
