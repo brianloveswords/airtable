@@ -31,7 +31,6 @@ func TestClientResource(t *testing.T) {
 
 	mainReq.Get("recfUW0mFSobdU9PX", nil)
 
-	fmt.Print(main)
-
+	fmt.Printf("%v \n", main)
 	t.Skipf("skipping")
 }

@@ -105,18 +105,18 @@ type Text string
 
 // AttachmentThumbnail ...
 type AttachmentThumbnail struct {
-	URL    string `from:"url"`
-	Width  int    `from:"width"`
-	Height int    `from:"height"`
+	URL    string  `from:"url"`
+	Width  float64 `from:"width"`
+	Height float64 `from:"height"`
 }
 
 // Attachment ...
 type Attachment struct {
-	ID         string `from:"id"`
-	URL        string `from:"url"`
-	Filename   string `from:"filename"`
-	Size       int    `from:"size"`
-	Type       string `from:"type"`
+	ID         string  `from:"id"`
+	URL        string  `from:"url"`
+	Filename   string  `from:"filename"`
+	Size       float64 `from:"size"`
+	Type       string  `from:"type"`
 	Thumbnails struct {
 		Small AttachmentThumbnail `from:"small"`
 		Large AttachmentThumbnail `from:"large"`
@@ -134,7 +134,7 @@ type Date string
 
 // FormulaResult ...
 type FormulaResult struct {
-	Int    int
+	Number float64
 	String string
 	Error  string
 }
@@ -159,11 +159,72 @@ func handleString(key string, f *reflect.Value, v *interface{}) {
 	}
 	f.SetString(str)
 }
-func handleInt(key string, f *reflect.Value, v *interface{})           {}
-func handleAttachment(key string, f *reflect.Value, v *interface{})    {}
-func handleBool(key string, f *reflect.Value, v *interface{})          {}
-func handleStringSlice(key string, f *reflect.Value, v *interface{})   {}
-func handleFormulaResult(key string, f *reflect.Value, v *interface{}) {}
+func handleInt(key string, f *reflect.Value, v *interface{}) {
+	// JavaScript/JSON doesn't have ints, only float64s
+	n, ok := (*v).(float64)
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as int", key))
+	}
+	f.SetInt(int64(n))
+}
+func handleAttachment(key string, f *reflect.Value, v *interface{}) {
+	// TODO: implement this hot fucking mess
+	fmt.Println("forget it jake it's chinatown")
+
+	// ugh ok, so we need to do this
+	// interface{} ->
+	//   []interface{} ->
+	//     []map[string]interface{} ->
+	//       []map[string]Attachment
+	fmt.Println(*v)
+	att, ok := (*v).([]map[string]interface{})
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as map(attachment)", key))
+	}
+	fmt.Println(att)
+}
+func handleBool(key string, f *reflect.Value, v *interface{}) {
+	b, ok := (*v).(bool)
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as bool", key))
+	}
+	f.SetBool(b)
+}
+func handleStringSlice(key string, f *reflect.Value, v *interface{}) {
+	s, ok := (*v).([]interface{})
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as slice", key))
+	}
+
+	// TODO: is there a better way to do this?
+	dst := make([]string, len(s))
+	for i, v := range s {
+		// shadows main slice
+		str, ok := v.(string)
+		if !ok {
+			panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as slice of strings", key))
+		}
+		dst[i] = str
+	}
+	f.Set(reflect.ValueOf(dst))
+}
+
+func handleFormulaResult(key string, f *reflect.Value, v *interface{}) {
+	switch decoded := (*v).(type) {
+	case float64:
+		f.Set(reflect.ValueOf(FormulaResult{Number: decoded}))
+	case string:
+		f.Set(reflect.ValueOf(FormulaResult{String: decoded}))
+	case map[string]interface{}:
+		e, ok := decoded["error"].(string)
+		if !ok {
+			panic(fmt.Sprintf("PARSE ERROR: forumla error for '%s' is not string", key))
+		}
+		f.Set(reflect.ValueOf(FormulaResult{Error: e}))
+	default:
+		panic(fmt.Sprintf("PARSE ERROR: formula '%s' is not string, int, or error", key))
+	}
+}
 
 // Get returns information about a resource
 func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
