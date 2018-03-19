@@ -103,27 +103,24 @@ type Rating int
 // Text ...
 type Text string
 
-// LongText ...
-type LongText string
-
 // AttachmentThumbnail ...
 type AttachmentThumbnail struct {
-	URL    string `json:"url"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	URL    string `from:"url"`
+	Width  int    `from:"width"`
+	Height int    `from:"height"`
 }
 
 // Attachment ...
 type Attachment struct {
-	ID         string `json:"id"`
-	URL        string `json:"url"`
-	Filename   string `json:"filename"`
-	Size       int    `json:"size"`
-	Type       string `json:"type"`
+	ID         string `from:"id"`
+	URL        string `from:"url"`
+	Filename   string `from:"filename"`
+	Size       int    `from:"size"`
+	Type       string `from:"type"`
 	Thumbnails struct {
-		Small AttachmentThumbnail `json:"small"`
-		Large AttachmentThumbnail `json:"large"`
-	} `json:"thumnbnails"`
+		Small AttachmentThumbnail `from:"small"`
+		Large AttachmentThumbnail `from:"large"`
+	} `from:"thumnbnails"`
 }
 
 // Checkbox ...
@@ -136,9 +133,10 @@ type MultipleSelect []string
 type Date string
 
 // FormulaResult ...
-type FormulaResult interface {
-	// TODO: represent string/int for successful formula, some error
-	// sentinel for unsuccessful
+type FormulaResult struct {
+	Int    int
+	String string
+	Error  string
 }
 
 // RecordLink ...
@@ -153,6 +151,19 @@ type GetResponse struct {
 	Fields      map[string]interface{} `json:"fields"`
 	CreatedTime string                 `json:"createdTime"`
 }
+
+func handleString(key string, f *reflect.Value, v *interface{}) {
+	str, ok := (*v).(string)
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as string", key))
+	}
+	f.SetString(str)
+}
+func handleInt(key string, f *reflect.Value, v *interface{})           {}
+func handleAttachment(key string, f *reflect.Value, v *interface{})    {}
+func handleBool(key string, f *reflect.Value, v *interface{})          {}
+func handleStringSlice(key string, f *reflect.Value, v *interface{})   {}
+func handleFormulaResult(key string, f *reflect.Value, v *interface{}) {}
 
 // Get returns information about a resource
 func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
@@ -184,36 +195,29 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 			key = from
 		}
 
-		// TODO: confirm it fits
 		if value := resp.Fields[key]; value != nil {
-			switch f.Kind() {
-			case reflect.Slice:
-				fmt.Println(reflect.TypeOf(value))
-				// s, ok := value.([]string)
-				// if !ok {
-				// 	panic("could not assert value as slice")
-				// }
-				// f.Set()
-				fmt.Printf("%v (slice)", key)
-			case reflect.String:
-				s, ok := value.(string)
-				if !ok {
-					panic("could not assert value as string")
-				}
-				f.SetString(s)
-				fmt.Printf("%v (string)", key)
-			case reflect.Int:
-				fmt.Printf("%v (int)", key)
-			case reflect.Struct:
-				fmt.Printf("%v (struct)", key)
-			case reflect.Bool:
-				fmt.Printf("%v (bool)", key)
-			case reflect.Interface:
-				fmt.Printf("%v (interface)", key)
+			switch f.Interface().(type) {
+			case Text:
+				handleString(key, &f, &value)
+			case SingleSelect:
+				handleString(key, &f, &value)
+			case Date:
+				handleString(key, &f, &value)
+			case Rating:
+				handleInt(key, &f, &value)
+			case Attachment:
+				handleAttachment(key, &f, &value)
+			case Checkbox:
+				handleBool(key, &f, &value)
+			case RecordLink:
+				handleStringSlice(key, &f, &value)
+			case MultipleSelect:
+				handleStringSlice(key, &f, &value)
+			case FormulaResult:
+				handleFormulaResult(key, &f, &value)
 			default:
-				fmt.Printf("%v (unknown)", key)
+				panic(fmt.Sprintf("UNHANDLED CASE: %v", fType.Type))
 			}
-			fmt.Println()
 		}
 	}
 	return &resp, nil
