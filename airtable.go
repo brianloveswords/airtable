@@ -182,6 +182,36 @@ func handleFloat(key string, f *reflect.Value, v *interface{}) {
 	}
 	f.SetFloat(n)
 }
+func handleSlice(key string, f *reflect.Value, v *interface{}) {
+	s, ok := (*v).([]interface{})
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as slice", key))
+	}
+
+	dst := reflect.MakeSlice(f.Type(), len(s), cap(s))
+
+	for i, v := range s {
+		elem := dst.Index(i)
+		switch elem.Kind() {
+		case reflect.Struct:
+			handleStruct(key, &elem, &v)
+		case reflect.Bool:
+			handleBool(key, &elem, &v)
+		case reflect.Int:
+			handleInt(key, &elem, &v)
+		case reflect.Float64:
+			handleFloat(key, &elem, &v)
+		case reflect.String:
+			handleString(key, &elem, &v)
+		case reflect.Slice:
+			handleSlice(key, &elem, &v)
+		default:
+			panic(fmt.Sprintf("UNHANDLED CASE: %s of kind %s", key, elem.Kind()))
+		}
+
+	}
+	f.Set(dst)
+}
 func handleStruct(key string, s *reflect.Value, v *interface{}) {
 	m, ok := (*v).(map[string]interface{})
 	if !ok {
@@ -209,8 +239,7 @@ func handleStruct(key string, s *reflect.Value, v *interface{}) {
 		case reflect.String:
 			handleString(key, &f, &v)
 		case reflect.Slice:
-			// TODO:: handle generic slices
-			handleStringSlice(key, &f, &v)
+			handleSlice(key, &f, &v)
 		default:
 			panic(fmt.Sprintf("UNHANDLED CASE: %s of kind %s", key, f.Kind()))
 		}
@@ -355,7 +384,8 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 			case Rating:
 				handleInt(key, &f, &value)
 			case []Attachment:
-				handleAttachment(key, &f, &value)
+				handleSlice(key, &f, &value)
+				//handleAttachment(key, &f, &value)
 			case Checkbox:
 				handleBool(key, &f, &value)
 			case RecordLink:
