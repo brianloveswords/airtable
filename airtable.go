@@ -130,7 +130,7 @@ type Attachment struct {
 type Checkbox bool
 
 // MultipleSelect ...
-type MultipleSelect map[string]string
+type MultipleSelect []string
 
 // Date ...
 type Date string
@@ -168,44 +168,54 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 		return nil, err
 	}
 
-	// r.record is type `interface {}`. We need to get the struct that
-	// is pointed to by that interface
+	// record comes in as an `interface {}` so let's get a pointer for
+	// it and unwrap until we can get a value for the underlying struct
+	refPtrToStruct := reflect.ValueOf(&r.record).Elem()
+	structAsInterface := refPtrToStruct.Interface()
+	refStruct := reflect.ValueOf(structAsInterface).Elem()
+	refStructType := refStruct.Type()
 
-	s := reflect.ValueOf(&r.record).Elem()
-	fmt.Printf("s: %q\n", s)
+	for i := 0; i < refStruct.NumField(); i++ {
+		f := refStruct.Field(i)
+		fType := refStructType.Field(i)
 
-	i := s.Interface()
-	fmt.Printf("i: %q\n", i)
+		key := fType.Name
+		if from, ok := fType.Tag.Lookup("from"); ok {
+			key = from
+		}
 
-	c := reflect.ValueOf(i).Elem()
-	fmt.Printf("c: %q\n", c)
-
-	// typeOf := reflect.TypeOf(s.Interface())
-
-	fmt.Printf("c.Type(): %q\n", c.Type())
-	fmt.Println(c.Field(0).CanSet())
-
-	c.Field(0).SetString("hi")
-
-	// get the underlying struct from the interface
-	// s := reflect.TypeOf(r.record)
-	// i := 0
-	// f := s.Field(i)
-
-	// var name string
-	// name, ok := f.Tag.Lookup("json")
-	// if !ok {
-	// 	name = f.Name
-	// }
-
-	// value := resp.Fields[name]
-	// fmt.Println("name: ", name)
-	// fmt.Println("value: ", value)
-
-	// get the concrete type from the field
-	// c := f.Type
-	// fmt.Println("type: ", c)
-
+		// TODO: confirm it fits
+		if value := resp.Fields[key]; value != nil {
+			switch f.Kind() {
+			case reflect.Slice:
+				fmt.Println(reflect.TypeOf(value))
+				// s, ok := value.([]string)
+				// if !ok {
+				// 	panic("could not assert value as slice")
+				// }
+				// f.Set()
+				fmt.Printf("%v (slice)", key)
+			case reflect.String:
+				s, ok := value.(string)
+				if !ok {
+					panic("could not assert value as string")
+				}
+				f.SetString(s)
+				fmt.Printf("%v (string)", key)
+			case reflect.Int:
+				fmt.Printf("%v (int)", key)
+			case reflect.Struct:
+				fmt.Printf("%v (struct)", key)
+			case reflect.Bool:
+				fmt.Printf("%v (bool)", key)
+			case reflect.Interface:
+				fmt.Printf("%v (interface)", key)
+			default:
+				fmt.Printf("%v (unknown)", key)
+			}
+			fmt.Println()
+		}
+	}
 	return &resp, nil
 }
 
@@ -218,6 +228,7 @@ type Resource struct {
 
 // NewResource returns a new resource manipulator
 func (c *Client) NewResource(name string, record interface{}) Resource {
+	// TODO: panic early if record is not a pointer
 	return Resource{name, c, record}
 }
 

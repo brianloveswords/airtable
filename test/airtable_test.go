@@ -9,7 +9,7 @@ import (
 )
 
 type MainRecord struct {
-	When        airtable.Date `f:"When?"`
+	When        airtable.Date `from:"When?"`
 	Rating      airtable.Rating
 	Name        airtable.Text
 	Notes       airtable.Text
