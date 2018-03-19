@@ -1,11 +1,17 @@
 package main
 
 import (
-	"fmt"
+	"encoding/gob"
+	"flag"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/brianloveswords/airtable"
+)
+
+var (
+	update = flag.Bool("update", false, "update the tests")
 )
 
 type MainRecord struct {
@@ -26,11 +32,33 @@ func TestClientResource(t *testing.T) {
 		BaseID: os.Getenv("AIRTABLE_TEST_BASE"),
 	}
 
+	id := "recfUW0mFSobdU9PX"
+
 	var main MainRecord
 	mainReq := client.NewResource("Main", &main)
+	mainReq.Get(id, nil)
 
-	mainReq.Get("recfUW0mFSobdU9PX", nil)
+	file, err := os.OpenFile("output.gob", os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	fmt.Printf("%v \n", main)
-	t.Skipf("skipping")
+	if *update {
+		enc := gob.NewEncoder(file)
+		enc.Encode(main)
+	}
+
+	file.Seek(0, 0)
+	dec := gob.NewDecoder(file)
+
+	var expect MainRecord
+	err = dec.Decode(&expect)
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(main, expect) {
+		t.Fatal("expected things to be equal")
+	}
 }
