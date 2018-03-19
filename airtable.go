@@ -146,6 +146,8 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 				handleString(key, &f, &v)
 			case reflect.Slice:
 				handleSlice(key, &f, &v)
+			case reflect.Interface:
+				handleInterface(key, &f, &v)
 			default:
 				panic(fmt.Sprintf("UNHANDLED CASE: %s of kind %s", key, f.Kind()))
 			}
@@ -208,10 +210,20 @@ func handleSlice(key string, f *reflect.Value, v *interface{}) {
 	f.Set(dst)
 }
 func handleStruct(key string, s *reflect.Value, v *interface{}) {
+
+	maybeParse := s.Addr().MethodByName("SelfParse")
+
+	if maybeParse.Kind() == reflect.Func {
+		args := []reflect.Value{reflect.ValueOf(v)}
+		maybeParse.Call(args)
+		return
+	}
+
 	m, ok := (*v).(map[string]interface{})
 	if !ok {
 		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as struct", key))
 	}
+
 	sType := s.Type()
 	for i := 0; i < sType.NumField(); i++ {
 		f := s.Field(i)

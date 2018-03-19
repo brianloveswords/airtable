@@ -47,10 +47,48 @@ type Date string
 
 // FormulaResult can be a string, number or error so leave it up to
 // the user to parse
-type FormulaResult interface{}
+type FormulaResult struct {
+	Number *float64
+	String *string
+	Error  *string
+}
+
+// SelfParse ...
+func (f *FormulaResult) SelfParse(i *interface{}) {
+	switch v := (*i).(type) {
+	case string:
+		f.String = &v
+	case float64:
+		f.Number = &v
+	case map[string]interface{}:
+		err, ok := v["error"].(string)
+		if !ok {
+			panic("parse error")
+		}
+		f.Error = &err
+	default:
+		panic("couldn't parse")
+	}
+}
+
+// Value ...
+func (f *FormulaResult) Value() (interface{}, bool) {
+	if f.Error != nil {
+		return nil, false
+	}
+	if f.String != nil {
+		return *f.String, true
+	}
+	return *f.Number, true
+}
 
 // RecordLink ...
 type RecordLink []string
 
 // SingleSelect ...
 type SingleSelect string
+
+// SelfParser ...
+type SelfParser interface {
+	SelfParse(v *interface{})
+}

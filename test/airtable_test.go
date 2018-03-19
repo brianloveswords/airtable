@@ -25,7 +25,7 @@ type MainRecord struct {
 	Check       airtable.Checkbox
 	Animals     airtable.MultipleSelect
 	Cats        airtable.RecordLink
-	//	Formula     airtable.FormulaResult
+	Formula     airtable.FormulaResult
 }
 
 func TestClientResource(t *testing.T) {
@@ -42,6 +42,16 @@ func TestClientResource(t *testing.T) {
 
 	if *check {
 		fmt.Println(main)
+
+		if v, ok := main.Formula.Value(); ok {
+			switch v.(type) {
+			case string:
+				fmt.Println("it's a string")
+			case float64:
+				fmt.Println("it's a float")
+			}
+		}
+
 		t.Skip("skipping...")
 	}
 
@@ -53,6 +63,7 @@ func TestClientResource(t *testing.T) {
 	if *update {
 		enc := gob.NewEncoder(file)
 		enc.Encode(main)
+		t.Skip("skipping...")
 	}
 
 	file.Seek(0, 0)
