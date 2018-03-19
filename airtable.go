@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"reflect"
 )
 
 const (
@@ -97,107 +98,60 @@ func checkErrorResponse(b []byte) error {
 /* Field Types */
 
 // Rating ...
-type Rating struct {
-	v int
-}
-
-// FromJSON ...
-func (f Rating) FromJSON() {}
+type Rating int
 
 // Text ...
-type Text struct {
-	v string
-}
+type Text string
 
-// FromJSON ...
-func (f Text) FromJSON() {}
+// LongText ...
+type LongText string
+
+// AttachmentThumbnail ...
+type AttachmentThumbnail struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
 
 // Attachment ...
 type Attachment struct {
-	v interface{}
+	ID         string `json:"id"`
+	URL        string `json:"url"`
+	Filename   string `json:"filename"`
+	Size       int    `json:"size"`
+	Type       string `json:"type"`
+	Thumbnails struct {
+		Small AttachmentThumbnail `json:"small"`
+		Large AttachmentThumbnail `json:"large"`
+	} `json:"thumnbnails"`
 }
-
-// FromJSON ...
-func (f Attachment) FromJSON() {}
 
 // Checkbox ...
-type Checkbox struct {
-	v bool
-}
-
-// FromJSON ...
-func (f Checkbox) FromJSON() {}
+type Checkbox bool
 
 // MultipleSelect ...
-type MultipleSelect struct {
-	v []string
-}
-
-// FromJSON ...
-func (f MultipleSelect) FromJSON() {}
+type MultipleSelect map[string]string
 
 // Date ...
-type Date struct {
-	v string
-}
-
-// FromJSON ...
-func (f Date) FromJSON() {}
+type Date string
 
 // FormulaResult ...
-type FormulaResult struct {
-	v interface{} // string or int or error
+type FormulaResult interface {
+	// TODO: represent string/int for successful formula, some error
+	// sentinel for unsuccessful
 }
-
-// FromJSON ...
-func (f FormulaResult) FromJSON() {}
 
 // RecordLink ...
-type RecordLink struct {
-	v []string
-}
-
-// FromJSON ...
-func (f RecordLink) FromJSON() {}
+type RecordLink []string
 
 // SingleSelect ...
-type SingleSelect struct {
-	v string
-}
-
-// FromJSON ...
-func (f SingleSelect) FromJSON() {}
-
-// AnyField ...
-type AnyField struct {
-	v interface{}
-}
-
-// FromJSON ...
-func (f AnyField) FromJSON() {}
-
-// Field ...
-type Field interface {
-	FromJSON()
-}
-
-// Record ...
-type Record map[string]Field
-
-// Get ...
-func (r *Record) Get(k string) Field {
-	return map[string]Field(*r)[k]
-}
-
-// Set ...
-func (r *Record) Set(k string, v interface{}) {
-	map[string]Field(*r)[k] = AnyField{v}
-}
+type SingleSelect string
 
 // GetResponse contains the response from requesting a resource
 type GetResponse struct {
-	ID     string                 `json:"id"`
-	Fields map[string]interface{} `json:"fields"`
+	ID          string                 `json:"id"`
+	Fields      map[string]interface{} `json:"fields"`
+	CreatedTime string                 `json:"createdTime"`
 }
 
 // Get returns information about a resource
@@ -214,12 +168,43 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 		return nil, err
 	}
 
-	for k, v := range resp.Fields {
-		fmt.Printf("%v: %v\n", k, v)
-		r.record.Set(k, v)
-		fmt.Printf("record: %q", r.record.Get(k))
-		fmt.Print("\n\n")
-	}
+	// r.record is type `interface {}`. We need to get the struct that
+	// is pointed to by that interface
+
+	s := reflect.ValueOf(&r.record).Elem()
+	fmt.Printf("s: %q\n", s)
+
+	i := s.Interface()
+	fmt.Printf("i: %q\n", i)
+
+	c := reflect.ValueOf(i).Elem()
+	fmt.Printf("c: %q\n", c)
+
+	// typeOf := reflect.TypeOf(s.Interface())
+
+	fmt.Printf("c.Type(): %q\n", c.Type())
+	fmt.Println(c.Field(0).CanSet())
+
+	c.Field(0).SetString("hi")
+
+	// get the underlying struct from the interface
+	// s := reflect.TypeOf(r.record)
+	// i := 0
+	// f := s.Field(i)
+
+	// var name string
+	// name, ok := f.Tag.Lookup("json")
+	// if !ok {
+	// 	name = f.Name
+	// }
+
+	// value := resp.Fields[name]
+	// fmt.Println("name: ", name)
+	// fmt.Println("value: ", value)
+
+	// get the concrete type from the field
+	// c := f.Type
+	// fmt.Println("type: ", c)
 
 	return &resp, nil
 }
@@ -228,12 +213,12 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 type Resource struct {
 	name   string
 	client *Client
-	record *Record
+	record interface{}
 }
 
 // NewResource returns a new resource manipulator
-func (c *Client) NewResource(name string, record Record) Resource {
-	return Resource{name, c, &record}
+func (c *Client) NewResource(name string, record interface{}) Resource {
+	return Resource{name, c, record}
 }
 
 // RequestBytes makes a raw request to the Airtable API
@@ -276,5 +261,3 @@ func (c *Client) RequestBytes(resource string, options QueryEncoder) ([]byte, er
 
 	return bytes, nil
 }
-
-//  LocalWords:  FromJSON
