@@ -13,7 +13,7 @@ type MainRecord struct {
 	Rating      airtable.Rating
 	Name        airtable.Text
 	Notes       airtable.Text
-	Attachments airtable.Attachment
+	Attachments []airtable.Attachment
 	Check       airtable.Checkbox
 	Animals     airtable.MultipleSelect
 	Formula     airtable.FormulaResult

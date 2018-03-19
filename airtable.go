@@ -105,22 +105,29 @@ type Text string
 
 // AttachmentThumbnail ...
 type AttachmentThumbnail struct {
+	// WARNING: if you add any new types, make sure to update
+	// `handleAttachment` or look forward to panics!
 	URL    string  `from:"url"`
 	Width  float64 `from:"width"`
 	Height float64 `from:"height"`
 }
 
+// AttachmentThumbnails ...
+type AttachmentThumbnails struct {
+	Small AttachmentThumbnail `from:"small"`
+	Large AttachmentThumbnail `from:"large"`
+}
+
 // Attachment ...
 type Attachment struct {
-	ID         string  `from:"id"`
-	URL        string  `from:"url"`
-	Filename   string  `from:"filename"`
-	Size       float64 `from:"size"`
-	Type       string  `from:"type"`
-	Thumbnails struct {
-		Small AttachmentThumbnail `from:"small"`
-		Large AttachmentThumbnail `from:"large"`
-	} `from:"thumnbnails"`
+	// WARNING: if you add any new types, make sure to update
+	// `handleAttachment` or look forward to panics!
+	ID         string               `from:"id"`
+	URL        string               `from:"url"`
+	Filename   string               `from:"filename"`
+	Size       float64              `from:"size"`
+	Type       string               `from:"type"`
+	Thumbnails AttachmentThumbnails `from:"thumbnails"`
 }
 
 // Checkbox ...
@@ -167,21 +174,102 @@ func handleInt(key string, f *reflect.Value, v *interface{}) {
 	}
 	f.SetInt(int64(n))
 }
+func handleFloat(key string, f *reflect.Value, v *interface{}) {
+	// JavaScript/JSON doesn't have ints, only float64s
+	n, ok := (*v).(float64)
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as int", key))
+	}
+	f.SetFloat(n)
+}
+func handleStruct(key string, s *reflect.Value, v *interface{}) {
+	m, ok := (*v).(map[string]interface{})
+	if !ok {
+		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as struct", key))
+	}
+	sType := s.Type()
+	for i := 0; i < sType.NumField(); i++ {
+		f := s.Field(i)
+		fType := sType.Field(i)
+		key := fType.Name
+		if from, ok := fType.Tag.Lookup("from"); ok {
+			key = from
+		}
+
+		v := m[key]
+		switch f.Kind() {
+		case reflect.Struct:
+			handleStruct(key, &f, &v)
+		case reflect.Bool:
+			handleBool(key, &f, &v)
+		case reflect.Int:
+			handleInt(key, &f, &v)
+		case reflect.Float64:
+			handleFloat(key, &f, &v)
+		case reflect.String:
+			handleString(key, &f, &v)
+		case reflect.Slice:
+			// TODO:: handle generic slices
+			handleStringSlice(key, &f, &v)
+		default:
+			panic(fmt.Sprintf("UNHANDLED CASE: %s of kind %s", key, f.Kind()))
+		}
+	}
+}
+
 func handleAttachment(key string, f *reflect.Value, v *interface{}) {
-	// TODO: implement this hot fucking mess
-	fmt.Println("forget it jake it's chinatown")
+	err := fmt.Sprintf("PARSE ERROR: could not parse column '%s' as map(attachment)", key)
 
 	// ugh ok, so we need to do this
 	// interface{} ->
 	//   []interface{} ->
 	//     []map[string]interface{} ->
-	//       []map[string]Attachment
-	fmt.Println(*v)
-	att, ok := (*v).([]map[string]interface{})
+	//       []Attachment
+	as, ok := (*v).([]interface{})
 	if !ok {
-		panic(fmt.Sprintf("PARSE ERROR: could not parse column '%s' as map(attachment)", key))
+		panic(err)
 	}
-	fmt.Println(att)
+
+	dst := make([]Attachment, len(as))
+	for i, a := range as {
+		m, ok := a.(map[string]interface{})
+
+		if !ok {
+			panic(err)
+		}
+
+		// construct the attachment by looping through the fields of
+		// the struct, finding in the attachment map by the lookup key
+		// from the tag and passing to the appropriate handler
+		var attachment Attachment
+		structType := reflect.TypeOf(attachment)
+		structValue := reflect.ValueOf(&attachment).Elem()
+		for j := 0; j < structType.NumField(); j++ {
+			f := structValue.Field(j)
+			fType := structType.Field(j)
+			key := fType.Tag.Get("from")
+
+			mapval := m[key]
+
+			switch f.Interface().(type) {
+			case string:
+				handleString(key, &f, &mapval)
+			case float64:
+				handleFloat(key, &f, &mapval)
+			case AttachmentThumbnails:
+				handleStruct(key, &f, &mapval)
+
+			// this should never happen. if it does there's a type
+			// that was added to Attachment that didn't get reflected
+			// in this switch statement.
+			default:
+				panic("UNHANDLED CASE: handleAttachment. contact package maintainer")
+			}
+		}
+
+		dst[i] = attachment
+	}
+	f.Set(reflect.ValueOf(dst))
 }
 func handleBool(key string, f *reflect.Value, v *interface{}) {
 	b, ok := (*v).(bool)
@@ -266,7 +354,7 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 				handleString(key, &f, &value)
 			case Rating:
 				handleInt(key, &f, &value)
-			case Attachment:
+			case []Attachment:
 				handleAttachment(key, &f, &value)
 			case Checkbox:
 				handleBool(key, &f, &value)
@@ -277,7 +365,7 @@ func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
 			case FormulaResult:
 				handleFormulaResult(key, &f, &value)
 			default:
-				panic(fmt.Sprintf("UNHANDLED CASE: %v", fType.Type))
+				panic(fmt.Sprintf("UNHANDLED CASE: %v, contact package maintainer", fType.Type))
 			}
 		}
 	}
