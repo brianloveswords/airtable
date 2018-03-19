@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/gob"
 	"flag"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -12,18 +13,19 @@ import (
 
 var (
 	update = flag.Bool("update", false, "update the tests")
+	check  = flag.Bool("check", false, "check the value")
 )
 
 type MainRecord struct {
 	When        airtable.Date `from:"When?"`
 	Rating      airtable.Rating
 	Name        airtable.Text
-	Notes       airtable.Text
-	Attachments []airtable.Attachment
+	Notes       airtable.LongText
+	Attachments airtable.Attachment
 	Check       airtable.Checkbox
 	Animals     airtable.MultipleSelect
-	Formula     airtable.FormulaResult
 	Cats        airtable.RecordLink
+	//	Formula     airtable.FormulaResult
 }
 
 func TestClientResource(t *testing.T) {
@@ -37,6 +39,11 @@ func TestClientResource(t *testing.T) {
 	var main MainRecord
 	mainReq := client.NewResource("Main", &main)
 	mainReq.Get(id, nil)
+
+	if *check {
+		fmt.Println(main)
+		t.Skip("skipping...")
+	}
 
 	file, err := os.OpenFile("output.gob", os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
