@@ -1,3 +1,4 @@
 /.plan
 /bases.txt
+/secrets.env
 *.snapshot
