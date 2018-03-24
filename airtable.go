@@ -9,34 +9,27 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
 	"reflect"
+
+	"go.uber.org/ratelimit"
 )
+
+var limiter = ratelimit.New(5) // per second
 
 const (
 	defaultRootURL = "https://api.airtable.com"
 	defaultVersion = "v0"
 )
 
-func makeURL(path string) {
-
-}
-
 // Client represents an interface to communicate with the Airtable API
 type Client struct {
-	APIKey  string
-	BaseID  string
-	Version string
-	RootURL string
-}
-
-// ErrClientSetupError is returned when the client is missing APIKey
-// or BaseID
-type ErrClientSetupError struct {
-	msg string
-}
-
-func (e ErrClientSetupError) Error() string {
-	return e.msg
+	APIKey     string
+	BaseID     string
+	Version    string
+	RootURL    string
+	HTTPClient *http.Client
 }
 
 // ErrClientRequestError is returned when the client runs into
@@ -49,12 +42,15 @@ func (e ErrClientRequestError) Error() string {
 	return e.msg
 }
 
-func (c *Client) checkSetup() error {
+func (c *Client) checkSetup() {
 	if c.BaseID == "" {
-		return ErrClientSetupError{"Client missing BaseID"}
+		panic("airtable: Client missing BaseID")
 	}
 	if c.APIKey == "" {
-		return ErrClientSetupError{"Client missing APIKey"}
+		panic("airtable: Client missing APIKey")
+	}
+	if c.HTTPClient == nil {
+		panic("airtable: missing HTTP client")
 	}
 	if c.Version == "" {
 		c.Version = defaultVersion
@@ -62,7 +58,6 @@ func (c *Client) checkSetup() error {
 	if c.RootURL == "" {
 		c.RootURL = defaultRootURL
 	}
-	return nil
 }
 
 func (c *Client) makeURL(resource string, options QueryEncoder) string {
@@ -70,11 +65,6 @@ func (c *Client) makeURL(resource string, options QueryEncoder) string {
 	url := fmt.Sprintf("%s/%s/%s/%s?%s",
 		c.RootURL, c.Version, c.BaseID, resource, q)
 	return url
-}
-
-// QueryEncoder encodes options to a query string
-type QueryEncoder interface {
-	Encode() string
 }
 
 type errorResponse struct {
@@ -95,6 +85,11 @@ func checkErrorResponse(b []byte) error {
 	return nil
 }
 
+// QueryEncoder encodes options to a query string
+type QueryEncoder interface {
+	Encode() string
+}
+
 // GetResponse contains the response from requesting a resource
 type GetResponse struct {
 	ID          string                 `json:"id"`
@@ -104,8 +99,8 @@ type GetResponse struct {
 
 // Get returns information about a resource
 func (r *Resource) Get(id string, options QueryEncoder) (*GetResponse, error) {
-	fullid := r.name + "/" + id
-	bytes, err := r.client.RequestBytes(fullid, options)
+	fullid := path.Join(r.name, id)
+	bytes, err := r.client.RequestBytes("GET", fullid, options)
 	if err != nil {
 		return nil, err
 	}
@@ -278,30 +273,29 @@ func (c *Client) NewResource(name string, record interface{}) Resource {
 }
 
 // RequestBytes makes a raw request to the Airtable API
-func (c *Client) RequestBytes(resource string, options QueryEncoder) ([]byte, error) {
+func (c *Client) RequestBytes(method string, endpoint string, options QueryEncoder) ([]byte, error) {
 	var err error
 
-	if err = c.checkSetup(); err != nil {
-		return nil, err
-	}
+	// panic if the client isn't setup correctly to make a request
+	c.checkSetup()
 
 	if options == nil {
 		options = url.Values{}
 	}
 
-	url := c.makeURL(resource, options)
+	url := c.makeURL(endpoint, options)
 
 	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	h := make(http.Header)
-	h.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
+	req.Header = make(http.Header)
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
 
-	req.Header = h
-
-	var httpclient http.Client
-	resp, err := httpclient.Do(req)
+	if os.Getenv("AIRTABLE_NO_LIMIT") == "" {
+		limiter.Take()
+	}
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

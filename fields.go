@@ -1,33 +1,29 @@
 package airtable
 
-// Rating ...
+// Rating type
 type Rating int
 
-// Text ...
+// Text type
 type Text string
 
-// LongText ...
+// LongText type
 type LongText string
 
-// AttachmentThumbnail ...
+// AttachmentThumbnail type
 type AttachmentThumbnail struct {
-	// WARNING: if you add any new types, make sure to update
-	// `handleAttachment` or look forward to panics!
 	URL    string  `from:"url"`
 	Width  float64 `from:"width"`
 	Height float64 `from:"height"`
 }
 
-// AttachmentThumbnails ...
+// AttachmentThumbnails type
 type AttachmentThumbnails struct {
 	Small AttachmentThumbnail `from:"small"`
 	Large AttachmentThumbnail `from:"large"`
 }
 
-// Attachment ...
+// Attachment type
 type Attachment []struct {
-	// WARNING: if you add any new types, make sure to update
-	// `handleAttachment` or look forward to panics!
 	ID         string               `from:"id"`
 	URL        string               `from:"url"`
 	Filename   string               `from:"filename"`
@@ -36,13 +32,13 @@ type Attachment []struct {
 	Thumbnails AttachmentThumbnails `from:"thumbnails"`
 }
 
-// Checkbox ...
+// Checkbox type
 type Checkbox bool
 
-// MultipleSelect ...
+// MultipleSelect type
 type MultipleSelect []string
 
-// Date ...
+// Date type
 type Date string
 
 // FormulaResult can be a string, number or error so leave it up to
@@ -53,7 +49,8 @@ type FormulaResult struct {
 	Error  *string
 }
 
-// SelfParse ...
+// SelfParse on FormulaResult figures out whether the result is a
+// number, string, or error object.
 func (f *FormulaResult) SelfParse(i *interface{}) {
 	switch v := (*i).(type) {
 	case string:
@@ -71,8 +68,9 @@ func (f *FormulaResult) SelfParse(i *interface{}) {
 	}
 }
 
-// Value ...
-func (f *FormulaResult) Value() (interface{}, bool) {
+// Value returns the underlying value if the formula results is a
+// string or a number, otherwise return nil pointer and false
+func (f *FormulaResult) Value() (v interface{}, ok bool) {
 	if f.Error != nil {
 		return nil, false
 	}
@@ -82,13 +80,8 @@ func (f *FormulaResult) Value() (interface{}, bool) {
 	return *f.Number, true
 }
 
-// RecordLink ...
+// RecordLink type
 type RecordLink []string
 
-// SingleSelect ...
+// SingleSelect type
 type SingleSelect string
-
-// SelfParser ...
-type SelfParser interface {
-	SelfParse(v *interface{})
-}

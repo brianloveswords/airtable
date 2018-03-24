@@ -1,21 +1,10 @@
-package main_test
+package airtable
 
 import (
-	"flag"
 	"fmt"
-	"io/ioutil"
 	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
-
-	"github.com/brianloveswords/airtable"
-)
-
-var (
-	update = flag.Bool("update", false, "update the tests")
 )
 
 func TestClientRequestBytes(t *testing.T) {
@@ -23,7 +12,7 @@ func TestClientRequestBytes(t *testing.T) {
 		name     string
 		method   string
 		resource string
-		options  func() airtable.QueryEncoder
+		queryFn  func() QueryEncoder
 		snapshot string
 		notlike  string
 		testerr  func(error) bool
@@ -38,7 +27,7 @@ func TestClientRequestBytes(t *testing.T) {
 			name:     "field filter: only name",
 			method:   "GET",
 			resource: "Main",
-			options: func() airtable.QueryEncoder {
+			queryFn: func() QueryEncoder {
 				q := make(url.Values)
 				q.Add("fields[]", "Name")
 				return q
@@ -50,7 +39,7 @@ func TestClientRequestBytes(t *testing.T) {
 			name:     "field filter: name and notes",
 			method:   "GET",
 			resource: "Main",
-			options: func() airtable.QueryEncoder {
+			queryFn: func() QueryEncoder {
 				q := make(url.Values)
 				q.Add("fields[]", "Name")
 				q.Add("fields[]", "Notes")
@@ -63,13 +52,13 @@ func TestClientRequestBytes(t *testing.T) {
 			name:     "request error",
 			method:   "GET",
 			resource: "Main",
-			options: func() airtable.QueryEncoder {
+			queryFn: func() QueryEncoder {
 				q := make(url.Values)
 				q.Add("fields", "[this will make it fail]")
 				return q
 			},
 			testerr: func(err error) bool {
-				_, ok := err.(airtable.ErrClientRequestError)
+				_, ok := err.(ErrClientRequestError)
 				return ok
 			},
 		},
@@ -77,17 +66,14 @@ func TestClientRequestBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := airtable.Client{
-				APIKey: os.Getenv("AIRTABLE_TEST_KEY"),
-				BaseID: os.Getenv("AIRTABLE_TEST_BASE"),
+			client := makeClient()
+
+			var options QueryEncoder
+			if tt.queryFn != nil {
+				options = tt.queryFn()
 			}
 
-			var options airtable.QueryEncoder
-			if tt.options != nil {
-				options = tt.options()
-			}
-
-			output, err := client.RequestBytes(tt.resource, options)
+			output, err := client.RequestBytes(tt.method, tt.resource, options)
 			if err != nil {
 				if tt.testerr == nil {
 					t.Fatal(err)
@@ -121,27 +107,4 @@ func TestClientRequestBytes(t *testing.T) {
 			}
 		})
 	}
-}
-
-func fixturePath(t *testing.T, fixture string) string {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatalf("problems recovering caller information")
-	}
-	return filepath.Join(filepath.Dir(filename), "snapshots", fixture)
-}
-
-func writeFixture(t *testing.T, fixture string, content []byte) {
-	err := ioutil.WriteFile(fixturePath(t, fixture), content, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func loadFixture(t *testing.T, fixture string) string {
-	content, err := ioutil.ReadFile(fixturePath(t, fixture))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(content)
 }

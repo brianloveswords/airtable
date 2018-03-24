@@ -1,42 +1,32 @@
-package main
+package airtable
 
 import (
 	"encoding/gob"
-	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
-
-	"github.com/brianloveswords/airtable"
 )
 
-var (
-	update = flag.Bool("update", false, "update the tests")
-	check  = flag.Bool("check", false, "check the value")
-)
-
-type MainRecord struct {
-	When        airtable.Date `from:"When?"`
-	Rating      airtable.Rating
-	Name        airtable.Text
-	Notes       airtable.LongText
-	Attachments airtable.Attachment
-	Check       airtable.Checkbox
-	Animals     airtable.MultipleSelect
-	Cats        airtable.RecordLink
-	Formula     airtable.FormulaResult
+type MainTestRecord struct {
+	When        Date `from:"When?"`
+	Rating      Rating
+	Name        Text
+	Notes       LongText
+	Attachments Attachment
+	Check       Checkbox
+	Animals     MultipleSelect
+	Cats        RecordLink
+	Formula     FormulaResult
 }
 
 func TestClientResource(t *testing.T) {
-	client := airtable.Client{
-		APIKey: os.Getenv("AIRTABLE_TEST_KEY"),
-		BaseID: os.Getenv("AIRTABLE_TEST_BASE"),
-	}
+	client := makeClient()
 
 	id := "recfUW0mFSobdU9PX"
 
-	var main MainRecord
+	var main MainTestRecord
 	mainReq := client.NewResource("Main", &main)
 	mainReq.Get(id, nil)
 
@@ -55,7 +45,9 @@ func TestClientResource(t *testing.T) {
 		t.Skip("skipping...")
 	}
 
-	file, err := os.OpenFile("output.gob", os.O_CREATE|os.O_RDWR, 0644)
+	file, err := os.OpenFile(
+		filepath.Join("testdata", "output.gob"),
+		os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +61,7 @@ func TestClientResource(t *testing.T) {
 	file.Seek(0, 0)
 	dec := gob.NewDecoder(file)
 
-	var expect MainRecord
+	var expect MainTestRecord
 	err = dec.Decode(&expect)
 	file.Close()
 	if err != nil {
