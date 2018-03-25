@@ -3,6 +3,7 @@ package airtable
 import (
 	"encoding/gob"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,7 +11,7 @@ import (
 )
 
 type MainTestRecord struct {
-	When        Date `from:"When?"`
+	When        Date `json:"When?"`
 	Rating      Rating
 	Name        Text
 	Notes       LongText
@@ -21,32 +22,34 @@ type MainTestRecord struct {
 	Formula     FormulaResult
 }
 
-func TestClientResource(t *testing.T) {
+func TestClientTableList(t *testing.T) {
+	client := makeClient()
+	var main MainTestRecord
+	table := client.Table("Main", &main)
+	res, err := table.List(nil)
+	if err != nil {
+		t.Fatalf("expected table.List(...) err to be nil %s", err)
+	}
+
+	fmt.Println(res)
+}
+
+func TestClientTableGet(t *testing.T) {
 	client := makeClient()
 
 	id := "recfUW0mFSobdU9PX"
 
 	var main MainTestRecord
-	mainReq := client.NewResource("Main", &main)
-	mainReq.Get(id, nil)
+	table := client.Table("Main", &main)
+	table.Get(id, nil)
 
 	if *check {
-		fmt.Println(main)
-
-		if v, ok := main.Formula.Value(); ok {
-			switch v.(type) {
-			case string:
-				fmt.Println("it's a string")
-			case float64:
-				fmt.Println("it's a float")
-			}
-		}
-
+		fmt.Printf("%#v\n", main)
 		t.Skip("skipping...")
 	}
 
 	file, err := os.OpenFile(
-		filepath.Join("testdata", "output.gob"),
+		filepath.Join("testdata", "get-table-output.gob"),
 		os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +61,6 @@ func TestClientResource(t *testing.T) {
 		t.Skip("skipping...")
 	}
 
-	file.Seek(0, 0)
 	dec := gob.NewDecoder(file)
 
 	var expect MainTestRecord
@@ -70,5 +72,107 @@ func TestClientResource(t *testing.T) {
 
 	if !reflect.DeepEqual(main, expect) {
 		t.Fatal("expected things to be equal")
+	}
+}
+
+func TestClientRequestBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		method   string
+		resource string
+		snapshot string
+		notlike  string
+		queryFn  func() QueryEncoder
+		testerr  func(error) bool
+	}{
+		{
+			name:     "no options",
+			method:   "GET",
+			resource: "Main",
+			snapshot: "no-options.snapshot",
+		},
+		{
+			name:     "field filter: only name",
+			method:   "GET",
+			resource: "Main",
+			queryFn: func() QueryEncoder {
+				q := make(url.Values)
+				q.Add("fields[]", "Name")
+				return q
+			},
+			snapshot: "fields-name.snapshot",
+			notlike:  "no-options.snapshot",
+		},
+		{
+			name:     "field filter: name and notes",
+			method:   "GET",
+			resource: "Main",
+			queryFn: func() QueryEncoder {
+				q := make(url.Values)
+				q.Add("fields[]", "Name")
+				q.Add("fields[]", "Notes")
+				return q
+			},
+			snapshot: "fields-name_notes.snapshot",
+			notlike:  "fields-name.snapshot",
+		},
+		{
+			name:     "request error",
+			method:   "GET",
+			resource: "Main",
+			queryFn: func() QueryEncoder {
+				q := make(url.Values)
+				q.Add("fields", "[this will make it fail]")
+				return q
+			},
+			testerr: func(err error) bool {
+				_, ok := err.(ErrClientRequestError)
+				return ok
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := makeClient()
+
+			var options QueryEncoder
+			if tt.queryFn != nil {
+				options = tt.queryFn()
+			}
+
+			output, err := client.RequestBytes(tt.method, tt.resource, options)
+			if err != nil {
+				if tt.testerr == nil {
+					t.Fatal(err)
+				}
+
+				if !tt.testerr(err) {
+					t.Fatal("error mismatch: did not expect", err)
+				}
+			}
+
+			if tt.snapshot == "" {
+				return
+			}
+
+			if *update {
+				fmt.Println("<<updating snapshots>>")
+				writeFixture(t, tt.snapshot, output)
+			}
+
+			actual := string(output)
+			expected := loadFixture(t, tt.snapshot)
+			if !reflect.DeepEqual(actual, expected) {
+				t.Fatalf("actual = %s, expected = %s", actual, expected)
+			}
+
+			if tt.notlike != "" {
+				expected := loadFixture(t, tt.notlike)
+				if reflect.DeepEqual(actual, expected) {
+					t.Fatalf("%s and %s should not match", tt.snapshot, tt.notlike)
+				}
+			}
+		})
 	}
 }

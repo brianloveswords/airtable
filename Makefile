@@ -4,8 +4,8 @@ clean:
 test:
 	go test -v ./...
 
-snapshot-test:
-	go test -v test/airtable_snapshot_test.go
+update-test:
+	go test -v ./... -update
 
-snapshot-test-update:
-	go test -v test/airtable_snapshot_test.go -update
+check-test:
+	go test -v ./... -check

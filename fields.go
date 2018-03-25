@@ -11,25 +11,25 @@ type LongText string
 
 // AttachmentThumbnail type
 type AttachmentThumbnail struct {
-	URL    string  `from:"url"`
-	Width  float64 `from:"width"`
-	Height float64 `from:"height"`
+	URL    string  `json:"url"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // AttachmentThumbnails type
 type AttachmentThumbnails struct {
-	Small AttachmentThumbnail `from:"small"`
-	Large AttachmentThumbnail `from:"large"`
+	Small AttachmentThumbnail `json:"small"`
+	Large AttachmentThumbnail `json:"large"`
 }
 
 // Attachment type
 type Attachment []struct {
-	ID         string               `from:"id"`
-	URL        string               `from:"url"`
-	Filename   string               `from:"filename"`
-	Size       float64              `from:"size"`
-	Type       string               `from:"type"`
-	Thumbnails AttachmentThumbnails `from:"thumbnails"`
+	ID         string               `json:"id"`
+	URL        string               `json:"url"`
+	Filename   string               `json:"filename"`
+	Size       float64              `json:"size"`
+	Type       string               `json:"type"`
+	Thumbnails AttachmentThumbnails `json:"thumbnails"`
 }
 
 // Checkbox type
