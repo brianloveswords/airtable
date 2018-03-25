@@ -1,11 +1,8 @@
 package airtable
 
 import (
-	"encoding/gob"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -24,8 +21,7 @@ type MainTestRecord struct {
 
 func TestClientTableList(t *testing.T) {
 	client := makeClient()
-	var main MainTestRecord
-	table := client.Table("Main", &main)
+	table := client.Table("Main")
 	res, err := table.List(nil)
 	if err != nil {
 		t.Fatalf("expected table.List(...) err to be nil %s", err)
@@ -40,39 +36,17 @@ func TestClientTableGet(t *testing.T) {
 	id := "recfUW0mFSobdU9PX"
 
 	var main MainTestRecord
-	table := client.Table("Main", &main)
-	table.Get(id, nil)
+	table := client.Table("Main")
+	if err := table.Get(id, &main); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if *check {
 		fmt.Printf("%#v\n", main)
 		t.Skip("skipping...")
 	}
 
-	file, err := os.OpenFile(
-		filepath.Join("testdata", "get-table-output.gob"),
-		os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if *update {
-		enc := gob.NewEncoder(file)
-		enc.Encode(main)
-		t.Skip("skipping...")
-	}
-
-	dec := gob.NewDecoder(file)
-
-	var expect MainTestRecord
-	err = dec.Decode(&expect)
-	file.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !reflect.DeepEqual(main, expect) {
-		t.Fatal("expected things to be equal")
-	}
+	fmt.Printf("%#v\n", main)
 }
 
 func TestClientRequestBytes(t *testing.T) {

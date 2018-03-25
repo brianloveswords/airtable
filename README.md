@@ -18,13 +18,10 @@ if err != nil {
     // something went wrong
 }
 
-rec, err := table.Get(id)
+rec = Main{ id: "lol" }
+err := table.Get(&rec)
 if err != nil {
     // something went wrong
-}
-
-if rec == nil {
-    // record could not be found
 }
 
 if rec.When != now {
