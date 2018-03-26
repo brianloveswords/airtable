@@ -5,26 +5,21 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"net/url"
 	"os"
-	"path/filepath"
-	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/brianloveswords/wiretap"
 )
 
 var (
-	update = flag.Bool("update", false, "update the tests")
+	record = flag.Bool("record", false, "wiretap new outgoing requests")
 	check  = flag.Bool("check", false, "check the value")
 )
 
 type MainTestRecord struct {
-	ID          Text
-	CreatedDate Date
+	ID          string
+	CreatedTime Date
 	Fields      struct {
 		When        Date `json:"When?"`
 		Rating      Rating
@@ -39,11 +34,42 @@ type MainTestRecord struct {
 }
 
 type LongListRecord struct {
-	ID          Text
-	CreatedDate Date
+	ID          string
+	CreatedTime Date
 	Fields      struct {
 		Auto    Autonumber `json:"autonumber"`
 		Created Date       `json:"created"`
+	}
+}
+
+func TestOptions(t *testing.T) {
+	client := makeClient()
+	table := client.Table("Long")
+	list := []LongListRecord{}
+
+	options := Options{
+		MaxRecords: 3,
+		Sort:       Sort{{"Auto", SortAsc}},
+		Fields:     []string{"Auto"},
+		Filter:     `{autonumber} > 2`,
+		View:       "odds",
+	}
+
+	if err := table.List(&list, &options); err != nil {
+		t.Fatal("expected table.List(...) err to be nil", err)
+	}
+
+	// odds, maxrecords 3, autonumber >2: 3 5 7
+	entry := list[len(list)-1]
+	expect := 7
+	result := entry.Fields.Auto
+
+	if entry.Fields.Created != "" {
+		t.Fatalf("should not have gotten created field")
+	}
+
+	if int(result) != expect {
+		t.Fatalf("expected result to be %d, got %d", expect, result)
 	}
 }
 
@@ -53,15 +79,11 @@ func TestClientTableLongList(t *testing.T) {
 	client := makeDefaultClient()
 	table := client.Table("Long")
 	list := []LongListRecord{}
-
 	options := Options{
-		Sort: Sort{
-			{"Auto", SortDesc},
-		},
-		Fields: []string{"Auto"},
+		Sort: Sort{{"Auto", SortAsc}},
 	}
 
-	if err := table.List(&list, options); err != nil {
+	if err := table.List(&list, &options); err != nil {
 		t.Fatal("expected table.List(...) err to be nil", err)
 	}
 
@@ -70,15 +92,10 @@ func TestClientTableLongList(t *testing.T) {
 	}
 
 	entry := list[0]
-
-	expect := len(list)
+	expect := 1
 	result := entry.Fields.Auto
 	if int(result) != expect {
 		t.Fatalf("expected first result to be %d, got %d", expect, result)
-	}
-
-	if entry.Fields.Created != "" {
-		t.Fatalf("should not have gotten created field")
 	}
 }
 
@@ -86,7 +103,7 @@ func TestClientTableList(t *testing.T) {
 	client := makeClient()
 	table := client.Table("Main")
 	list := []MainTestRecord{}
-	if err := table.List(&list, Options{}); err != nil {
+	if err := table.List(&list, nil); err != nil {
 		t.Fatalf("expected table.List(...) err to be nil %s", err)
 	}
 
@@ -131,108 +148,6 @@ func TestClientTableGet(t *testing.T) {
 	}
 }
 
-func TestClientRequestBytes(t *testing.T) {
-	tests := []struct {
-		name     string
-		method   string
-		resource string
-		snapshot string
-		notlike  string
-		queryFn  func() QueryEncoder
-		testerr  func(error) bool
-	}{
-		{
-			name:     "no options",
-			method:   "GET",
-			resource: "Main",
-			snapshot: "no-options.snapshot",
-		},
-		{
-			name:     "field filter: only name",
-			method:   "GET",
-			resource: "Main",
-			queryFn: func() QueryEncoder {
-				q := make(url.Values)
-				q.Add("fields[]", "Name")
-				return q
-			},
-			snapshot: "fields-name.snapshot",
-			notlike:  "no-options.snapshot",
-		},
-		{
-			name:     "field filter: name and notes",
-			method:   "GET",
-			resource: "Main",
-			queryFn: func() QueryEncoder {
-				q := make(url.Values)
-				q.Add("fields[]", "Name")
-				q.Add("fields[]", "Notes")
-				return q
-			},
-			snapshot: "fields-name_notes.snapshot",
-			notlike:  "fields-name.snapshot",
-		},
-		{
-			name:     "request error",
-			method:   "GET",
-			resource: "Main",
-			queryFn: func() QueryEncoder {
-				q := make(url.Values)
-				q.Add("fields", "[this will make it fail]")
-				return q
-			},
-			testerr: func(err error) bool {
-				_, ok := err.(ErrClientRequestError)
-				return ok
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := makeClient()
-
-			var options QueryEncoder
-			if tt.queryFn != nil {
-				options = tt.queryFn()
-			}
-
-			output, err := client.RequestBytes(tt.method, tt.resource, options)
-			if err != nil {
-				if tt.testerr == nil {
-					t.Fatal(err)
-				}
-
-				if !tt.testerr(err) {
-					t.Fatal("error mismatch: did not expect", err)
-				}
-			}
-
-			if tt.snapshot == "" {
-				return
-			}
-
-			if *update {
-				fmt.Println("<<updating snapshots>>")
-				writeFixture(t, tt.snapshot, output)
-			}
-
-			actual := string(output)
-			expected := loadFixture(t, tt.snapshot)
-			if !reflect.DeepEqual(actual, expected) {
-				t.Fatalf("actual = %s, expected = %s", actual, expected)
-			}
-
-			if tt.notlike != "" {
-				expected := loadFixture(t, tt.notlike)
-				if reflect.DeepEqual(actual, expected) {
-					t.Fatalf("%s and %s should not match", tt.snapshot, tt.notlike)
-				}
-			}
-		})
-	}
-}
-
 type credentials struct {
 	APIKey string
 	BaseID string
@@ -265,6 +180,7 @@ func makeClient() *Client {
 		HTTPClient: tap.Client,
 	}
 }
+
 func makeDefaultClient() *Client {
 	creds := loadCredentials()
 	return &Client{
@@ -273,33 +189,10 @@ func makeDefaultClient() *Client {
 	}
 }
 
-func fixturePath(t *testing.T, fixture string) string {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatalf("problems recovering caller information")
-	}
-	return filepath.Join(filepath.Dir(filename), "testdata", fixture)
-}
-
-func writeFixture(t *testing.T, fixture string, content []byte) {
-	err := ioutil.WriteFile(fixturePath(t, fixture), content, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func loadFixture(t *testing.T, fixture string) string {
-	content, err := ioutil.ReadFile(fixturePath(t, fixture))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(content)
-}
-
 func makeWiretap() *wiretap.Tap {
 	store := wiretap.FileStore("testdata")
 	var tap wiretap.Tap
-	if *update {
+	if *record {
 		tap = *wiretap.NewRecording(store)
 	} else {
 		tap = *wiretap.NewPlayback(store, wiretap.StrictPlayback)

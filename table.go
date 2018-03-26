@@ -11,7 +11,6 @@ type Table struct {
 	name   string
 	client *Client
 	record interface{}
-	cache  map[interface{}]string
 }
 
 // Table returns a new table
@@ -20,7 +19,6 @@ func (c *Client) Table(name string) Table {
 	return Table{
 		client: c,
 		name:   name,
-		cache:  map[interface{}]string{},
 	}
 }
 
@@ -35,9 +33,14 @@ func (t *Table) Get(id string, record interface{}) error {
 }
 
 // List returns stuff
-func (t *Table) List(listPtr interface{}, options Options) error {
+func (t *Table) List(listPtr interface{}, options *Options) error {
+	if options == nil {
+		options = &Options{}
+	}
+
 	oneRecord := reflect.TypeOf(listPtr).Elem().Elem()
 	options.typ = oneRecord
+
 	bytes, err := t.client.RequestBytes("GET", t.name, options)
 	if err != nil {
 		return err
@@ -64,7 +67,7 @@ func (t *Table) List(listPtr interface{}, options Options) error {
 
 	offset := container.Elem().FieldByName("Offset").String()
 	if offset != "" {
-		options.Offset = offset
+		options.offset = offset
 		return t.List(listPtr, options)
 	}
 	return nil

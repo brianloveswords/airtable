@@ -19,9 +19,14 @@ const (
 
 // Options ...
 type Options struct {
-	Sort   Sort
-	Offset string
-	Fields []string
+	Sort       Sort
+	Fields     []string
+	MaxRecords uint
+	Filter     string
+	View       string
+	Typecast   bool
+
+	offset string
 	typ    reflect.Type
 }
 
@@ -32,8 +37,24 @@ type Sort [][2]string
 func (o Options) Encode() string {
 	q := []string{}
 
-	if o.Offset != "" {
-		q = append(q, "offset="+e(o.Offset))
+	if o.offset != "" {
+		q = append(q, "offset="+e(o.offset))
+	}
+
+	if o.Typecast != false {
+		q = append(q, "typecast=true")
+	}
+
+	if o.Filter != "" {
+		q = append(q, "filterByFormula="+e(o.Filter))
+	}
+
+	if o.View != "" {
+		q = append(q, "view="+e(o.View))
+	}
+
+	if o.MaxRecords != 0 {
+		q = append(q, fmt.Sprintf("maxRecords=%d", o.MaxRecords))
 	}
 
 	// This creates encoded version of something like this:
