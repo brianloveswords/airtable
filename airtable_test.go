@@ -42,21 +42,23 @@ type LongListRecord struct {
 	ID          Text
 	CreatedDate Date
 	Fields      struct {
-		Auto Autonumber `json:"autonumber"`
+		Auto    Autonumber `json:"autonumber"`
+		Created Date       `json:"created"`
 	}
 }
 
 func TestClientTableLongList(t *testing.T) {
+	// we can't use the wiretap because the offsets are always different
+	// TODO: ignore certain params from wiretap?
 	client := makeDefaultClient()
 	table := client.Table("Long")
 	list := []LongListRecord{}
 
-	sort := Sort{
-		{"Auto", SortDesc},
-	}
-
 	options := Options{
-		Sort: sort,
+		Sort: Sort{
+			{"Auto", SortDesc},
+		},
+		Fields: []string{"Auto"},
 	}
 
 	if err := table.List(&list, options); err != nil {
@@ -67,11 +69,16 @@ func TestClientTableLongList(t *testing.T) {
 		t.Fatalf("should have gotten 200+ results, got %d", len(list))
 	}
 
-	expect := len(list)
+	entry := list[0]
 
-	result := list[0].Fields.Auto
+	expect := len(list)
+	result := entry.Fields.Auto
 	if int(result) != expect {
 		t.Fatalf("expected first result to be %d, got %d", expect, result)
+	}
+
+	if entry.Fields.Created != "" {
+		t.Fatalf("should not have gotten created field")
 	}
 }
 

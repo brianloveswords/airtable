@@ -90,9 +90,6 @@ func (c *Client) checkSetup() {
 
 func (c *Client) makeURL(resource string, options QueryEncoder) string {
 	q := options.Encode()
-
-	fmt.Println(q)
-
 	url := fmt.Sprintf("%s/%s/%s/%s?%s",
 		c.RootURL, c.Version, c.BaseID, resource, q)
 	return url
