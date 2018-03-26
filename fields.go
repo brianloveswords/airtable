@@ -1,6 +1,9 @@
 package airtable
 
-import "fmt"
+import (
+	"encoding/json"
+	"log"
+)
 
 // Rating type
 type Rating int
@@ -54,22 +57,25 @@ type FormulaResult struct {
 // UnmarshalJSON tries to figure out if this is an error, a string or
 // a number.
 func (f *FormulaResult) UnmarshalJSON(b []byte) error {
-	fmt.Println("should unmarshal:", b)
+	i := new(interface{})
+	if err := json.Unmarshal(b, &i); err != nil {
+		return err
+	}
+	switch v := (*i).(type) {
+	case string:
+		f.String = &v
+	case float64:
+		f.Number = &v
+	case map[string]interface{}:
+		err, ok := v["error"].(string)
+		if !ok {
+			panic("parse error")
+		}
+		f.Error = &err
+	default:
+		log.Fatal("couldn't parse Formula type as number, string or error")
+	}
 	return nil
-	// switch v := (*i).(type) {
-	// case string:
-	// 	f.String = &v
-	// case float64:
-	// 	f.Number = &v
-	// case map[string]interface{}:
-	// 	err, ok := v["error"].(string)
-	// 	if !ok {
-	// 		panic("parse error")
-	// 	}
-	// 	f.Error = &err
-	// default:
-	// 	panic("couldn't parse")
-	// }
 }
 
 // Value returns the underlying value if the formula results is a
