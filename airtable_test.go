@@ -37,12 +37,24 @@ type MainTestRecord struct {
 func TestClientTableList(t *testing.T) {
 	client := makeClient()
 	table := client.Table("Main")
-	res, err := table.List(nil)
+
+	list := []MainTestRecord{}
+	err := table.List(&list, nil)
 	if err != nil {
 		t.Fatalf("expected table.List(...) err to be nil %s", err)
 	}
 
-	fmt.Println(res)
+	if *check {
+		fmt.Printf("%#v\n", list)
+		t.Skip("skipping...")
+	}
+
+	if len(list) == 0 {
+		t.Fatalf("should have gotten results")
+	}
+	if list[0].Name == "" {
+		t.Fatal("should have gotten a name from list results")
+	}
 }
 
 func TestClientTableGet(t *testing.T) {
@@ -60,8 +72,10 @@ func TestClientTableGet(t *testing.T) {
 		fmt.Printf("%#v\n", main)
 		t.Skip("skipping...")
 	}
-	v, _ := main.Formula.Value()
-	fmt.Printf("%#v\n", v)
+
+	if main.Name == "" {
+		t.Fatal("should have gotten a name")
+	}
 }
 
 func TestClientRequestBytes(t *testing.T) {

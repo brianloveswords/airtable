@@ -29,7 +29,7 @@ func (r *Table) Get(id string, record interface{}) error {
 	if err != nil {
 		return err
 	}
-	recordType := reflect.ValueOf(record).Type()
+	recordType := reflect.TypeOf(record)
 	responseType := reflect.StructOf([]reflect.StructField{
 		{Name: "ID", Type: reflect.TypeOf("")},
 		{Name: "Fields", Type: recordType},
@@ -41,26 +41,43 @@ func (r *Table) Get(id string, record interface{}) error {
 		FieldByName("Fields").
 		Set(reflect.ValueOf(record))
 
+	return json.Unmarshal(bytes, container.Interface())
+}
+
+// List returns stuff
+func (r *Table) List(listPtr interface{}, options QueryEncoder) error {
+	bytes, err := r.client.RequestBytes("GET", r.name, options)
+	if err != nil {
+		return err
+	}
+
+	recordType := reflect.TypeOf(listPtr).Elem().Elem()
+	entryType := reflect.StructOf([]reflect.StructField{
+		{Name: "ID", Type: reflect.TypeOf("")},
+		{Name: "Fields", Type: recordType},
+		{Name: "CreatedTime", Type: reflect.TypeOf("")},
+	})
+
+	responseType := reflect.StructOf([]reflect.StructField{
+		{Name: "Records", Type: reflect.SliceOf(entryType)},
+		{Name: "Offset", Type: reflect.TypeOf("")},
+	})
+
+	container := reflect.New(responseType)
 	err = json.Unmarshal(bytes, container.Interface())
 	if err != nil {
 		return err
 	}
+
+	recordList := container.Elem().FieldByName("Records")
+	list := reflect.ValueOf(listPtr).Elem()
+	for i := 0; i < recordList.Len(); i++ {
+		entry := recordList.Index(i).FieldByName("Fields")
+		list = reflect.Append(list, entry)
+	}
+	reflect.ValueOf(listPtr).Elem().Set(list)
 	return nil
-}
 
-// List returns stuff
-func (r *Table) List(options QueryEncoder) (*ListResponse, error) {
-	bytes, err := r.client.RequestBytes("GET", r.name, options)
-	if err != nil {
-		return nil, err
-	}
-	var res ListResponse
-	err = json.Unmarshal(bytes, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ListResponse{}, nil
 }
 
 // ListResponse contains the response from listing records
