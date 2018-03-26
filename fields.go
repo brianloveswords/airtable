@@ -8,6 +8,9 @@ import (
 // Rating type
 type Rating int
 
+// Autonumber type
+type Autonumber int
+
 // Text type
 type Text string
 

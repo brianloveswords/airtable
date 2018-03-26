@@ -23,24 +23,63 @@ var (
 )
 
 type MainTestRecord struct {
-	When        Date `json:"When?"`
-	Rating      Rating
-	Name        Text
-	Notes       LongText
-	Attachments Attachment
-	Check       Checkbox
-	Animals     MultipleSelect
-	Cats        RecordLink
-	Formula     FormulaResult
+	ID          Text
+	CreatedDate Date
+	Fields      struct {
+		When        Date `json:"When?"`
+		Rating      Rating
+		Name        Text
+		Notes       LongText
+		Attachments Attachment
+		Check       Checkbox
+		Animals     MultipleSelect
+		Cats        RecordLink
+		Formula     FormulaResult
+	}
+}
+
+type LongListRecord struct {
+	ID          Text
+	CreatedDate Date
+	Fields      struct {
+		Auto Autonumber `json:"autonumber"`
+	}
+}
+
+func TestClientTableLongList(t *testing.T) {
+	client := makeDefaultClient()
+	table := client.Table("Long")
+	list := []LongListRecord{}
+
+	sort := Sort{
+		{"Auto", SortDesc},
+	}
+
+	options := Options{
+		Sort: sort,
+	}
+
+	if err := table.List(&list, options); err != nil {
+		t.Fatal("expected table.List(...) err to be nil", err)
+	}
+
+	if len(list) < 200 {
+		t.Fatalf("should have gotten 200+ results, got %d", len(list))
+	}
+
+	expect := len(list)
+
+	result := list[0].Fields.Auto
+	if int(result) != expect {
+		t.Fatalf("expected first result to be %d, got %d", expect, result)
+	}
 }
 
 func TestClientTableList(t *testing.T) {
 	client := makeClient()
 	table := client.Table("Main")
-
 	list := []MainTestRecord{}
-	err := table.List(&list, nil)
-	if err != nil {
+	if err := table.List(&list, Options{}); err != nil {
 		t.Fatalf("expected table.List(...) err to be nil %s", err)
 	}
 
@@ -52,8 +91,15 @@ func TestClientTableList(t *testing.T) {
 	if len(list) == 0 {
 		t.Fatalf("should have gotten results")
 	}
-	if list[0].Name == "" {
+
+	entry := list[0]
+
+	if entry.Fields.Name == "" {
 		t.Fatal("should have gotten a name from list results")
+	}
+
+	if entry.ID == "" {
+		t.Fatal("should have found an ID")
 	}
 }
 
@@ -73,7 +119,7 @@ func TestClientTableGet(t *testing.T) {
 		t.Skip("skipping...")
 	}
 
-	if main.Name == "" {
+	if main.Fields.Name == "" {
 		t.Fatal("should have gotten a name")
 	}
 }
@@ -210,6 +256,13 @@ func makeClient() *Client {
 		APIKey:     creds.APIKey,
 		BaseID:     creds.BaseID,
 		HTTPClient: tap.Client,
+	}
+}
+func makeDefaultClient() *Client {
+	creds := loadCredentials()
+	return &Client{
+		APIKey: creds.APIKey,
+		BaseID: creds.BaseID,
 	}
 }
 

@@ -11,6 +11,7 @@ type Table struct {
 	name   string
 	client *Client
 	record interface{}
+	cache  map[interface{}]string
 }
 
 // Table returns a new table
@@ -19,47 +20,31 @@ func (c *Client) Table(name string) Table {
 	return Table{
 		client: c,
 		name:   name,
+		cache:  map[interface{}]string{},
 	}
 }
 
 // Get returns information about a resource
-func (r *Table) Get(id string, record interface{}) error {
-	fullid := path.Join(r.name, id)
-	bytes, err := r.client.RequestBytes("GET", fullid, nil)
+func (t *Table) Get(id string, record interface{}) error {
+	fullid := path.Join(t.name, id)
+	bytes, err := t.client.RequestBytes("GET", fullid, nil)
 	if err != nil {
 		return err
 	}
-	recordType := reflect.TypeOf(record)
-	responseType := reflect.StructOf([]reflect.StructField{
-		{Name: "ID", Type: reflect.TypeOf("")},
-		{Name: "Fields", Type: recordType},
-		{Name: "CreatedTime", Type: reflect.TypeOf("")},
-	})
-	container := reflect.New(responseType)
-	container.
-		Elem().
-		FieldByName("Fields").
-		Set(reflect.ValueOf(record))
-
-	return json.Unmarshal(bytes, container.Interface())
+	return json.Unmarshal(bytes, record)
 }
 
 // List returns stuff
-func (r *Table) List(listPtr interface{}, options QueryEncoder) error {
-	bytes, err := r.client.RequestBytes("GET", r.name, options)
+func (t *Table) List(listPtr interface{}, options Options) error {
+	oneRecord := reflect.TypeOf(listPtr).Elem().Elem()
+	options.typ = oneRecord
+	bytes, err := t.client.RequestBytes("GET", t.name, options)
 	if err != nil {
 		return err
 	}
 
-	recordType := reflect.TypeOf(listPtr).Elem().Elem()
-	entryType := reflect.StructOf([]reflect.StructField{
-		{Name: "ID", Type: reflect.TypeOf("")},
-		{Name: "Fields", Type: recordType},
-		{Name: "CreatedTime", Type: reflect.TypeOf("")},
-	})
-
 	responseType := reflect.StructOf([]reflect.StructField{
-		{Name: "Records", Type: reflect.SliceOf(entryType)},
+		{Name: "Records", Type: reflect.TypeOf(listPtr).Elem()},
 		{Name: "Offset", Type: reflect.TypeOf("")},
 	})
 
@@ -72,12 +57,17 @@ func (r *Table) List(listPtr interface{}, options QueryEncoder) error {
 	recordList := container.Elem().FieldByName("Records")
 	list := reflect.ValueOf(listPtr).Elem()
 	for i := 0; i < recordList.Len(); i++ {
-		entry := recordList.Index(i).FieldByName("Fields")
+		entry := recordList.Index(i)
 		list = reflect.Append(list, entry)
 	}
 	reflect.ValueOf(listPtr).Elem().Set(list)
-	return nil
 
+	offset := container.Elem().FieldByName("Offset").String()
+	if offset != "" {
+		options.Offset = offset
+		return t.List(listPtr, options)
+	}
+	return nil
 }
 
 // ListResponse contains the response from listing records
