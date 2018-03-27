@@ -3,6 +3,7 @@ package airtable
 import (
 	"encoding/json"
 	"log"
+	"time"
 )
 
 // Rating type
@@ -47,7 +48,7 @@ type Checkbox bool
 type MultipleSelect []string
 
 // Date type
-type Date string
+type Date struct{ time.Time }
 
 // FormulaResult can be a string, number or error so leave it up to
 // the user to parse

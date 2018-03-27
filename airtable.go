@@ -6,6 +6,7 @@ package airtable
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -32,6 +33,11 @@ type Client struct {
 
 // RequestBytes makes a raw request to the Airtable API
 func (c *Client) RequestBytes(method string, endpoint string, options QueryEncoder) ([]byte, error) {
+	return c.RequestWithBody(method, endpoint, options, http.NoBody)
+}
+
+// RequestWithBody makes a raw request to the Airtable API
+func (c *Client) RequestWithBody(method string, endpoint string, options QueryEncoder, body io.Reader) ([]byte, error) {
 	var err error
 
 	// panic if the client isn't setup correctly to make a request
@@ -43,12 +49,13 @@ func (c *Client) RequestBytes(method string, endpoint string, options QueryEncod
 
 	url := c.makeURL(endpoint, options)
 
-	req, err := http.NewRequest("GET", url, http.NoBody)
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header = make(http.Header)
+	req.Header = http.Header{}
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
+	req.Header.Add("Content-Type", "application/json")
 
 	if os.Getenv("AIRTABLE_NO_LIMIT") == "" {
 		limiter.Take()

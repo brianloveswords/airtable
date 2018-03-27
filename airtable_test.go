@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"math/rand"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/brianloveswords/wiretap"
 )
@@ -19,26 +22,64 @@ var (
 
 type MainTestRecord struct {
 	ID          string
-	CreatedTime Date
+	CreatedTime time.Time
 	Fields      struct {
-		When        Date `json:"When?"`
+		When        time.Time `json:"When?"`
 		Rating      Rating
-		Name        Text
-		Notes       LongText
+		Name        string
+		Notes       string
 		Attachments Attachment
-		Check       Checkbox
+		Check       bool
 		Animals     MultipleSelect
 		Cats        RecordLink
 		Formula     FormulaResult
 	}
 }
 
+type UpdateTestRecord struct {
+	ID          string
+	CreatedTime time.Time
+	Fields      struct {
+		Name   string `json:"Name"`
+		Random int    `json:"Random Number"`
+	}
+}
+
 type LongListRecord struct {
 	ID          string
-	CreatedTime Date
+	CreatedTime time.Time
 	Fields      struct {
 		Auto    Autonumber `json:"autonumber"`
-		Created Date       `json:"created"`
+		Created time.Time  `json:"created"`
+	}
+}
+
+func TestUpdateRecord(t *testing.T) {
+	client := makeDefaultClient()
+	table := client.Table("Update Test")
+	list := []UpdateTestRecord{}
+	options := Options{MaxRecords: 1}
+
+	if err := table.List(&list, &options); err != nil {
+		t.Fatal("expected table.List(...) err to be nil", err)
+	}
+
+	entry := list[0]
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	num := rng.Intn(math.MaxInt32)
+	entry.Fields.Random = num
+
+	if err := table.Update(entry); err != nil {
+		t.Fatal("unexpected update error", err)
+	}
+
+	record := UpdateTestRecord{}
+	if err := table.Get(entry.ID, &record); err != nil {
+		t.Fatal("unexpected get error", err)
+	}
+
+	if record.Fields.Random != num {
+		t.Errorf("%d != %d", record.Fields.Random, num)
 	}
 }
 
@@ -64,7 +105,7 @@ func TestOptions(t *testing.T) {
 	expect := 7
 	result := entry.Fields.Auto
 
-	if entry.Fields.Created != "" {
+	if !entry.Fields.Created.IsZero() {
 		t.Fatalf("should not have gotten created field")
 	}
 
@@ -75,7 +116,6 @@ func TestOptions(t *testing.T) {
 
 func TestClientTableLongList(t *testing.T) {
 	// we can't use the wiretap because the offsets are always different
-	// TODO: ignore certain params from wiretap?
 	client := makeDefaultClient()
 	table := client.Table("Long")
 	list := []LongListRecord{}

@@ -1,11 +1,12 @@
-clean:
-	rm -f test/snapshots/*.snapshot
-
 test:
 	go test -v ./...
 
-update-test:
-	go test -v ./... -update
+clean:
+	rm -f testdata/*
 
-check-test:
-	go test -v ./... -check
+cover:
+	go test -coverprofile=coverage.out
+
+cover-html:
+	go test -coverprofile=coverage.out &&\
+	go tool cover -html=coverage.out

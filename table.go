@@ -2,8 +2,11 @@ package airtable
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"path"
 	"reflect"
+	"strings"
 )
 
 // Table ...
@@ -30,6 +33,53 @@ func (t *Table) Get(id string, record interface{}) error {
 		return err
 	}
 	return json.Unmarshal(bytes, record)
+}
+
+func getFields(e *interface{}) (interface{}, error) {
+	fields := reflect.ValueOf(*e).FieldByName("Fields")
+	if !fields.IsValid() {
+		return nil, errors.New("getFields: missing Fields")
+	}
+	if fields.Kind() != reflect.Struct {
+		return nil, errors.New("getFields: Fields not a struct")
+	}
+	return fields.Interface(), nil
+}
+
+func getID(e *interface{}) (string, error) {
+	id := reflect.ValueOf(*e).FieldByName("ID")
+	if !id.IsValid() {
+		return "", errors.New("getID: missing ID")
+	}
+	if id.Kind() != reflect.String {
+		return "", errors.New("getID: ID not a string")
+	}
+	return id.String(), nil
+}
+
+const updateMethod = "PATCH"
+
+// Update ...
+func (t *Table) Update(record interface{}) error {
+	f, err := getFields(&record)
+	if err != nil {
+		return err
+	}
+	id, err := getID(&record)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	body := strings.NewReader(fmt.Sprintf(`{"fields": %s}`, b))
+	url := path.Join(t.name, id)
+	_, err = t.client.RequestWithBody(updateMethod, url, Options{}, body)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // List returns stuff
