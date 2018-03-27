@@ -62,10 +62,11 @@ type CreateDeleteRecord struct {
 }
 
 func TestCreateDeleteRecord(t *testing.T) {
-	client := makeDefaultClient()
+	client := makeClient()
 	table := client.Table("Create/Delete Test")
 
-	record := NewRecord(&CreateDeleteRecord{}, Fields{
+	record := CreateDeleteRecord{}
+	NewRecord(&record, Fields{
 		"Name":    "ya",
 		"Notes":   "asdf",
 		"Checked": true,
@@ -75,10 +76,26 @@ func TestCreateDeleteRecord(t *testing.T) {
 	if err := table.Create(&record); err != nil {
 		t.Fatal("error creating record", err)
 	}
+
+	if record.ID == "" {
+		t.Fatal("expected ID set on new record")
+	}
+
+	if record.CreatedTime.IsZero() {
+		t.Fatal("expected CreatedTime to be set")
+	}
+
+	if err := table.Delete(&record); err != nil {
+		t.Fatal("error creating record", err)
+	}
+
+	if record.ID != "" {
+		t.Fatal("expected ID to not be set anymore")
+	}
 }
 
 func TestUpdateRecord(t *testing.T) {
-	client := makeDefaultClient()
+	client := makeAlwaysOnClient()
 	table := client.Table("Update Test")
 	list := []UpdateTestRecord{}
 	options := Options{MaxRecords: 1}
@@ -139,7 +156,7 @@ func TestOptions(t *testing.T) {
 
 func TestClientTableLongList(t *testing.T) {
 	// we can't use the wiretap because the offsets are always different
-	client := makeDefaultClient()
+	client := makeAlwaysOnClient()
 	table := client.Table("Long")
 	list := []LongListRecord{}
 	options := Options{
@@ -244,7 +261,7 @@ func makeClient() *Client {
 	}
 }
 
-func makeDefaultClient() *Client {
+func makeAlwaysOnClient() *Client {
 	creds := loadCredentials()
 	return &Client{
 		APIKey: creds.APIKey,

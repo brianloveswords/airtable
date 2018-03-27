@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path"
 	"reflect"
 	"strings"
@@ -26,7 +27,6 @@ type Record struct {
 
 // Table returns a new table
 func (c *Client) Table(name string) Table {
-	// TODO: panic early if record is not a pointer
 	return Table{
 		client: c,
 		name:   name,
@@ -35,16 +35,12 @@ func (c *Client) Table(name string) Table {
 
 // Get returns information about a resource
 func (t *Table) Get(id string, record interface{}) error {
-	fullid := path.Join(t.name, id)
-	bytes, err := t.client.RequestBytes("GET", fullid, nil)
+	bytes, err := t.client.Request("GET", t.makePath(id), nil)
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal(bytes, record)
 }
-
-const updateMethod = "PATCH"
-const createMethod = "POST"
 
 // Update ...
 func (t *Table) Update(record interface{}) error {
@@ -56,8 +52,7 @@ func (t *Table) Update(record interface{}) error {
 	if err != nil {
 		return err
 	}
-	url := path.Join(t.name, id)
-	_, err = t.client.RequestWithBody(updateMethod, url, Options{}, body)
+	_, err = t.client.RequestWithBody("PATCH", t.makePath(id), Options{}, body)
 	if err != nil {
 		return err
 	}
@@ -68,7 +63,7 @@ func (t *Table) Update(record interface{}) error {
 type Fields map[string]interface{}
 
 // NewRecord ...
-func NewRecord(container interface{}, data Fields) interface{} {
+func NewRecord(container interface{}, data Fields) {
 	// iterating over the container fields and applying those keys to
 	// the passed in fields would be "safer", but it could possibly
 	// mask user error if data is the complete wrong fit. instead we
@@ -90,20 +85,53 @@ func NewRecord(container interface{}, data Fields) interface{} {
 		}
 		f.Set(val)
 	}
-	return container
 }
 
 // Create ...
-func (t *Table) Create(record *interface{}) error {
-	body, err := getJSONBody(*record)
+func (t *Table) Create(record interface{}) error {
+	body, err := getJSONBody(record)
 	if err != nil {
 		return err
 	}
-	res, err := t.client.RequestWithBody(createMethod, t.name, Options{}, body)
+	res, err := t.client.RequestWithBody("POST", t.makePath(""), Options{}, body)
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal(res, record)
+}
+
+type deleteResponse struct {
+	Deleted bool
+	ID      string
+}
+
+func (t *Table) makePath(id string) string {
+	n := url.PathEscape(t.name)
+	if id == "" {
+		return n
+	}
+	return path.Join(n, id)
+}
+
+// Delete ...
+func (t *Table) Delete(record interface{}) error {
+	id, err := getID(record)
+	if err != nil {
+		return err
+	}
+	res, err := t.client.Request("DELETE", t.makePath(id), Options{})
+	if err != nil {
+		return err
+	}
+	deleted := deleteResponse{}
+	if err := json.Unmarshal(res, &deleted); err != nil {
+		return err
+	}
+	if !deleted.Deleted {
+		return fmt.Errorf("error: did not delete %s", res)
+	}
+
+	return nil
 }
 
 // List returns stuff
@@ -115,7 +143,7 @@ func (t *Table) List(listPtr interface{}, options *Options) error {
 	oneRecord := reflect.TypeOf(listPtr).Elem().Elem()
 	options.typ = oneRecord
 
-	bytes, err := t.client.RequestBytes("GET", t.name, options)
+	bytes, err := t.client.Request("GET", t.makePath(""), options)
 	if err != nil {
 		return err
 	}
@@ -172,8 +200,8 @@ func getFields(e interface{}) (interface{}, error) {
 	return fields.Interface(), nil
 }
 
-func getID(e *interface{}) (string, error) {
-	id := reflect.ValueOf(*e).FieldByName("ID")
+func getID(e interface{}) (string, error) {
+	id := reflect.ValueOf(e).Elem().FieldByName("ID")
 	if !id.IsValid() {
 		return "", errors.New("getID: missing ID")
 	}

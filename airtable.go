@@ -31,8 +31,8 @@ type Client struct {
 	HTTPClient *http.Client
 }
 
-// RequestBytes makes a raw request to the Airtable API
-func (c *Client) RequestBytes(method string, endpoint string, options QueryEncoder) ([]byte, error) {
+// Request makes a raw request to the Airtable API
+func (c *Client) Request(method string, endpoint string, options QueryEncoder) ([]byte, error) {
 	return c.RequestWithBody(method, endpoint, options, http.NoBody)
 }
 
@@ -101,7 +101,7 @@ func (c *Client) checkSetup() {
 
 func (c *Client) makeURL(resource string, options QueryEncoder) string {
 	q := options.Encode()
-	p := url.PathEscape(resource)
+	p := resource
 	uri := fmt.Sprintf("%s/%s/%s/%s?%s",
 		c.RootURL, c.Version, c.BaseID, p, q)
 	return uri
