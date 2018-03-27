@@ -44,8 +44,8 @@ type Attachment []struct {
 // Checkbox type
 type Checkbox bool
 
-// MultipleSelect type
-type MultipleSelect []string
+// MultiSelect type
+type MultiSelect []string
 
 // Date type
 type Date struct{ time.Time }

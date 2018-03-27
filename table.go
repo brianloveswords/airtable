@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // Table ...
@@ -14,6 +16,12 @@ type Table struct {
 	name   string
 	client *Client
 	record interface{}
+}
+
+// Record ...
+type Record struct {
+	ID          string
+	CreatedTime time.Time
 }
 
 // Table returns a new table
@@ -35,51 +43,67 @@ func (t *Table) Get(id string, record interface{}) error {
 	return json.Unmarshal(bytes, record)
 }
 
-func getFields(e *interface{}) (interface{}, error) {
-	fields := reflect.ValueOf(*e).FieldByName("Fields")
-	if !fields.IsValid() {
-		return nil, errors.New("getFields: missing Fields")
-	}
-	if fields.Kind() != reflect.Struct {
-		return nil, errors.New("getFields: Fields not a struct")
-	}
-	return fields.Interface(), nil
-}
-
-func getID(e *interface{}) (string, error) {
-	id := reflect.ValueOf(*e).FieldByName("ID")
-	if !id.IsValid() {
-		return "", errors.New("getID: missing ID")
-	}
-	if id.Kind() != reflect.String {
-		return "", errors.New("getID: ID not a string")
-	}
-	return id.String(), nil
-}
-
 const updateMethod = "PATCH"
+const createMethod = "POST"
 
 // Update ...
 func (t *Table) Update(record interface{}) error {
-	f, err := getFields(&record)
-	if err != nil {
-		return err
-	}
 	id, err := getID(&record)
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(f)
+	body, err := getJSONBody(&record)
 	if err != nil {
 		return err
 	}
-	body := strings.NewReader(fmt.Sprintf(`{"fields": %s}`, b))
 	url := path.Join(t.name, id)
 	_, err = t.client.RequestWithBody(updateMethod, url, Options{}, body)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// Fields ...
+type Fields map[string]interface{}
+
+// NewRecord ...
+func NewRecord(container interface{}, data Fields) interface{} {
+	// iterating over the container fields and applying those keys to
+	// the passed in fields would be "safer", but it could possibly
+	// mask user error if data is the complete wrong fit. instead we
+	// can iterate over data and apply that to the container, and fail
+	// early if there isn't a matching field.
+	ref := reflect.ValueOf(container).Elem()
+	typ := ref.Type()
+	fields := ref.FieldByName("Fields")
+	for k, v := range data {
+		f := fields.FieldByName(k)
+		val := reflect.ValueOf(v)
+		if !f.IsValid() {
+			errstr := fmt.Sprintf("cannot find field %s.%s", typ, k)
+			panic(errstr)
+		}
+		if fkind, vkind := f.Kind(), val.Kind(); fkind != vkind {
+			errstr := fmt.Sprintf("type error setting %s.%s: %s != %s", typ, k, fkind, vkind)
+			panic(errstr)
+		}
+		f.Set(val)
+	}
+	return container
+}
+
+// Create ...
+func (t *Table) Create(record *interface{}) error {
+	body, err := getJSONBody(*record)
+	if err != nil {
+		return err
+	}
+	res, err := t.client.RequestWithBody(createMethod, t.name, Options{}, body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(res, record)
 }
 
 // List returns stuff
@@ -123,15 +147,42 @@ func (t *Table) List(listPtr interface{}, options *Options) error {
 	return nil
 }
 
-// ListResponse contains the response from listing records
-type ListResponse struct {
-	Records []GetResponse
-	Offset  string
+func getJSONBody(r interface{}) (io.Reader, error) {
+	f, err := getFields(r)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	jsonstr := fmt.Sprintf(`{"fields": %s}`, b)
+	body := strings.NewReader(jsonstr)
+	return body, nil
 }
 
-// GetResponse contains the response from requesting a resource
-type GetResponse struct {
-	ID          string
-	Fields      map[string]interface{}
-	CreatedTime string
+func getFields(e interface{}) (interface{}, error) {
+	fields := reflect.ValueOf(e).Elem().FieldByName("Fields")
+	if !fields.IsValid() {
+		return nil, errors.New("getFields: missing Fields")
+	}
+	if fields.Kind() != reflect.Struct {
+		return nil, errors.New("getFields: Fields not a struct")
+	}
+	return fields.Interface(), nil
+}
+
+func getID(e *interface{}) (string, error) {
+	id := reflect.ValueOf(*e).FieldByName("ID")
+	if !id.IsValid() {
+		return "", errors.New("getID: missing ID")
+	}
+	if id.Kind() != reflect.String {
+		return "", errors.New("getID: ID not a string")
+	}
+	return id.String(), nil
+}
+
+func debugLog(s string, a ...interface{}) {
+	fmt.Printf("DEBUG: "+s+"\n", a...)
 }

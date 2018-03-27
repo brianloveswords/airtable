@@ -71,7 +71,11 @@ func (c *Client) RequestWithBody(method string, endpoint string, options QueryEn
 	}
 
 	if err = checkErrorResponse(bytes); err != nil {
-		return bytes, err
+		return bytes, ErrClientRequestError{
+			err:    err,
+			url:    url,
+			method: method,
+		}
 	}
 
 	return bytes, nil
@@ -97,37 +101,37 @@ func (c *Client) checkSetup() {
 
 func (c *Client) makeURL(resource string, options QueryEncoder) string {
 	q := options.Encode()
-	url := fmt.Sprintf("%s/%s/%s/%s?%s",
-		c.RootURL, c.Version, c.BaseID, resource, q)
-	return url
+	p := url.PathEscape(resource)
+	uri := fmt.Sprintf("%s/%s/%s/%s?%s",
+		c.RootURL, c.Version, c.BaseID, p, q)
+	return uri
 }
 
 // ErrClientRequestError is returned when the client runs into
 // problems with a request
 type ErrClientRequestError struct {
-	msg string
+	err    error
+	method string
+	url    string
 }
 
 func (e ErrClientRequestError) Error() string {
-	return e.msg
+	return fmt.Sprintf("client request error: %s %s: %s", e.method, e.url, e.err)
 }
 
-type errorResponse struct {
-	Error struct {
-		Type    string
-		Message string
-	}
+type genericErrorResponse struct {
+	Error interface{} `json:"error"`
 }
 
 func checkErrorResponse(b []byte) error {
-	var reqerr errorResponse
-	if jsonerr := json.Unmarshal(b, &reqerr); jsonerr != nil {
-		return jsonerr
+	var generic genericErrorResponse
+	if err := json.Unmarshal(b, &generic); err != nil {
+		return fmt.Errorf("couldn't unmarshal response: %s", err)
 	}
-	if reqerr.Error.Type != "" {
-		return ErrClientRequestError{reqerr.Error.Message}
+	if generic.Error == nil {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%s", generic.Error)
 }
 
 // QueryEncoder encodes options to a query string

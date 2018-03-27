@@ -21,36 +21,59 @@ var (
 )
 
 type MainTestRecord struct {
-	ID          string
-	CreatedTime time.Time
-	Fields      struct {
+	Record
+	Fields struct {
 		When        time.Time `json:"When?"`
 		Rating      Rating
 		Name        string
 		Notes       string
 		Attachments Attachment
 		Check       bool
-		Animals     MultipleSelect
+		Animals     MultiSelect
 		Cats        RecordLink
 		Formula     FormulaResult
 	}
 }
 
 type UpdateTestRecord struct {
-	ID          string
-	CreatedTime time.Time
-	Fields      struct {
+	Record
+	Fields struct {
 		Name   string `json:"Name"`
 		Random int    `json:"Random Number"`
 	}
 }
 
 type LongListRecord struct {
-	ID          string
-	CreatedTime time.Time
-	Fields      struct {
+	Record
+	Fields struct {
 		Auto    Autonumber `json:"autonumber"`
 		Created time.Time  `json:"created"`
+	}
+}
+
+type CreateDeleteRecord struct {
+	Record
+	Fields struct {
+		Name    string
+		Notes   string
+		Checked bool
+		Multi   MultiSelect `json:"Multi Select"`
+	}
+}
+
+func TestCreateDeleteRecord(t *testing.T) {
+	client := makeDefaultClient()
+	table := client.Table("Create/Delete Test")
+
+	record := NewRecord(&CreateDeleteRecord{}, Fields{
+		"Name":    "ya",
+		"Notes":   "asdf",
+		"Checked": true,
+		"Multi":   MultiSelect{"test-one", "test-two"},
+	})
+
+	if err := table.Create(&record); err != nil {
+		t.Fatal("error creating record", err)
 	}
 }
 
