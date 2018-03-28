@@ -20,11 +20,13 @@ var (
 	check  = flag.Bool("check", false, "check the value")
 )
 
+/* Types */
+
 type MainTestRecord struct {
 	Record
 	Fields struct {
 		When        time.Time `json:"When?"`
-		Rating      Rating
+		Rating      int
 		Name        string
 		Notes       string
 		Attachments Attachment
@@ -46,8 +48,8 @@ type UpdateTestRecord struct {
 type LongListRecord struct {
 	Record
 	Fields struct {
-		Auto    Autonumber `json:"autonumber"`
-		Created time.Time  `json:"created"`
+		Auto    int       `json:"autonumber"`
+		Created time.Time `json:"created"`
 	}
 }
 
@@ -60,6 +62,8 @@ type CreateDeleteRecord struct {
 		Multi   MultiSelect `json:"Multi Select"`
 	}
 }
+
+/* Tests */
 
 func TestCreateDeleteRecord(t *testing.T) {
 	client := makeClient()
@@ -92,6 +96,10 @@ func TestCreateDeleteRecord(t *testing.T) {
 	if record.ID != "" {
 		t.Fatal("expected ID to not be set anymore")
 	}
+
+	if !record.CreatedTime.IsZero() {
+		t.Fatal("expected created time to be zero")
+	}
 }
 
 func TestUpdateRecord(t *testing.T) {
@@ -109,7 +117,7 @@ func TestUpdateRecord(t *testing.T) {
 	num := rng.Intn(math.MaxInt32)
 	entry.Fields.Random = num
 
-	if err := table.Update(entry); err != nil {
+	if err := table.Update(&entry); err != nil {
 		t.Fatal("unexpected update error", err)
 	}
 
@@ -227,6 +235,8 @@ func TestClientTableGet(t *testing.T) {
 		t.Fatal("should have gotten a name")
 	}
 }
+
+/* helpers */
 
 type credentials struct {
 	APIKey string

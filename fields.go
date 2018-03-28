@@ -3,55 +3,48 @@ package airtable
 import (
 	"encoding/json"
 	"log"
-	"time"
 )
 
-// Rating type
-type Rating int
-
-// Autonumber type
-type Autonumber int
-
-// Text type
-type Text string
-
-// LongText type
-type LongText string
-
-// AttachmentThumbnail type
-type AttachmentThumbnail struct {
-	URL    string  `json:"url"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-}
-
-// AttachmentThumbnails type
-type AttachmentThumbnails struct {
-	Small AttachmentThumbnail `json:"small"`
-	Large AttachmentThumbnail `json:"large"`
-}
-
-// Attachment type
+// Attachment type. When creating a new attachment, only URL and
+// optionally Filename should be provided.
 type Attachment []struct {
 	ID         string               `json:"id"`
 	URL        string               `json:"url"`
 	Filename   string               `json:"filename"`
 	Size       float64              `json:"size"`
 	Type       string               `json:"type"`
-	Thumbnails AttachmentThumbnails `json:"thumbnails"`
+	Thumbnails attachmentThumbnails `json:"thumbnails"`
 }
 
-// Checkbox type
-type Checkbox bool
+type attachmentThumbnail struct {
+	URL    string  `json:"url"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
 
-// MultiSelect type
+type attachmentThumbnails struct {
+	Small attachmentThumbnail `json:"small"`
+	Large attachmentThumbnail `json:"large"`
+}
+
+// TODO: make MultiSelect more useful. It's a natural fit for a Set
+// type, but we don't have sets out of the box and it currently seems
+// frivolous to pull in an external dependency or even make a naive set
+// type just for this.
+
+// MultiSelect type. Alias for string slice.
 type MultiSelect []string
 
-// Date type
-type Date struct{ time.Time }
+// TODO: make RecordLink more useful. For example, if we know what table
+// the record links are supposed to come from, we could automatically
+// hydrate those links instead of returning strings. We could also
+// automatically create new records when necessary if the linked record
+// object is novel in a Create operation.
 
-// FormulaResult can be a string, number or error so leave it up to
-// the user to parse
+// RecordLink type. Alias for string slice.
+type RecordLink []string
+
+// FormulaResult can be a string, number or error.
 type FormulaResult struct {
 	Number *float64
 	String *string
@@ -93,9 +86,3 @@ func (f *FormulaResult) Value() (v interface{}, ok bool) {
 	}
 	return *f.Number, true
 }
-
-// RecordLink type
-type RecordLink []string
-
-// SingleSelect type
-type SingleSelect string

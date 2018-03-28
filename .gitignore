@@ -3,3 +3,4 @@
 /secrets.env
 *.snapshot
 /testdata
+/coverage.out
