@@ -76,7 +76,7 @@ func Example() {
 		Fields: []string{"Title", "Author", "Rating"},
 		Filter: `{Rating} < 3`,
 	})
-	for _, badBook := range bestBooks {
+	for _, badBook := range badBooks {
 		fmt.Println("deleting", badBook.Fields.Title)
 		books.Delete(&badBook)
 	}
