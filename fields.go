@@ -8,23 +8,22 @@ import (
 // Attachment type. When creating a new attachment, only URL and
 // optionally Filename should be provided.
 type Attachment []struct {
-	ID         string               `json:"id"`
-	URL        string               `json:"url"`
-	Filename   string               `json:"filename"`
-	Size       float64              `json:"size"`
-	Type       string               `json:"type"`
-	Thumbnails attachmentThumbnails `json:"thumbnails"`
+	ID         string
+	URL        string `json:"url"`
+	Filename   string `json:"filename"`
+	Size       float64
+	Type       string
+	Thumbnails struct {
+		Small AttachmentThumbnail
+		Large AttachmentThumbnail
+	}
 }
 
-type attachmentThumbnail struct {
-	URL    string  `json:"url"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-}
-
-type attachmentThumbnails struct {
-	Small attachmentThumbnail `json:"small"`
-	Large attachmentThumbnail `json:"large"`
+// AttachmentThumbnail holds the details of an individual thumbnail
+type AttachmentThumbnail struct {
+	URL    string
+	Width  float64
+	Height float64
 }
 
 // TODO: make MultiSelect more useful. It's a natural fit for a Set
