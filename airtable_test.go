@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,22 +66,64 @@ type CreateDeleteRecord struct {
 
 /* Tests */
 
-func TestListPanic(t *testing.T) {
+func TestListArgValidation(t *testing.T) {
+	type testinputs struct {
+		name string
+		arg  func() interface{}
+	}
+
+	tests := []testinputs{
+		{"not a pointer", func() interface{} { return "string type" }},
+		{"not a pointer to a slice", func() interface{} {
+			s := "hi"
+			return &s
+		}},
+		{"not a pointer to a slice of structs", func() interface{} {
+			return &[]string{"hi"}
+		}},
+		{"struct doesn't have Fields", func() interface{} {
+			type invalidstruct struct{ nope string }
+			return &[]invalidstruct{}
+		}},
+		{"struct Fields is wrong type", func() interface{} {
+			type invalidstruct struct{ Fields string }
+			return &[]invalidstruct{}
+		}},
+		{"struct ID is missing", func() interface{} {
+			type invalidstruct struct{ Fields struct{} }
+			return &[]invalidstruct{}
+		}},
+		{"struct ID is wrong type", func() interface{} {
+			type invalidstruct struct {
+				Fields struct{}
+				ID     bool
+			}
+			return &[]invalidstruct{}
+		}},
+	}
+
 	client := makeClient()
 	table := client.Table("!panic!")
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("Recovered:", r)
-		} else {
-			t.Fatal("expected panic")
-		}
-	}()
-	s := "whataver"
-	table.List(&s, nil)
+
+	for _, test := range tests {
+		t.Run("invalid type: "+test.name, func(tt *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					tt.Fatal("expected panic")
+				}
+				msg := r.(error)
+				if !strings.Contains(msg.Error(), "type error") {
+					tt.Fatal("expected type error")
+				}
+			}()
+			table.List(test.arg(), nil)
+		})
+	}
 }
 
 func TestCreateDeleteRecord(t *testing.T) {
-	client := makeClient()
+	client := makeAlwaysOnClient()
 	table := client.Table("Create/Delete Test")
 
 	record := CreateDeleteRecord{}

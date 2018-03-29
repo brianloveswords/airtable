@@ -360,14 +360,48 @@ func getRecordType(listPtr interface{}) reflect.Type {
 
 func validateListPtr(listPtr interface{}) {
 	// must be:
-	// - a pointer
-	// - to a slice
-	// - whose elements are records
-	listPtrKind := reflect.TypeOf(listPtr).Kind()
+	// ... a pointer
+	typ := reflect.TypeOf(listPtr)
+	listPtrKind := typ.Kind()
 	if listPtrKind != reflect.Ptr {
-		panic(fmt.Errorf("listPtr must be a pointer, got %s", listPtrKind))
+		panic(fmt.Errorf("airtable type error: listPtr must be a pointer, got %s", listPtrKind))
 	}
-	fmt.Println("validateListPtr:", listPtrKind)
+
+	// ... to a slice
+	list := typ.Elem()
+	listKind := list.Kind()
+	if listKind != reflect.Slice {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice, got %s", listKind))
+	}
+
+	// ... whose elements are structs
+	elem := list.Elem()
+	elemKind := elem.Kind()
+	if elemKind != reflect.Struct {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice of structs, got %s", elemKind))
+	}
+
+	// ... the structs have a field named "Fields" that's a struct
+	fields, ok := elem.FieldByName("Fields")
+	if !ok {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice of structs with field 'Fields'"))
+	}
+
+	fieldsKind := fields.Type.Kind()
+	if fieldsKind != reflect.Struct {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice of structs with field 'Fields' that is a struct, got %s", fieldsKind))
+	}
+
+	// ... and a field named "ID" that's a string
+	id, ok := elem.FieldByName("ID")
+	if !ok {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice of structs with field 'ID'"))
+	}
+
+	idKind := id.Type.Kind()
+	if idKind != reflect.String {
+		panic(fmt.Errorf("airtable type error: listPtr must point to a slice of structs with field 'ID' that is a string, got %s", idKind))
+	}
 }
 
 // List queries the table for list of records and stores it in the
