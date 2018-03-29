@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"reflect"
-	"runtime"
 	"strings"
 	"time"
 
@@ -508,39 +506,21 @@ func (t *Table) List(listPtr interface{}, options *Options) error {
 	// record so we can look up the JSON names of the fields.
 	options.setType(getRecordType(listPtr))
 
-	bytes, err := t.client.Request("GET", t.makePath(""), options)
-	if err != nil {
-		return err
-	}
-
-	container := makeResponseContainer(listPtr)
-	err = json.Unmarshal(bytes, container.Interface())
-	if err != nil {
-		return err
-	}
-
-	appendRecordsToList(listPtr, container)
-
-	// when there are more records that match the query, airtable will
-	// include an "offset" field in the response. if that exists we
-	// recur with the offset as an added option until airtable stops
-	// returning offsets.
-	//
-	// for pro airtable plans, max records per base is 50,000 and
-	// airtable returns 100 results per page, so that is a maximum stack
-	// depth of 500 for this function, and each of those stacks can
-	// potentially be holding onto 100 copies of the record because of
-	// container, so we end up holding onto
-	if offset := getOffset(container); offset != "" {
-		var mem runtime.MemStats
-		runtime.ReadMemStats(&mem)
-		log.Printf("mem.Alloc %dkb\n", mem.Alloc/1024)
-		log.Printf("mem.TotalAlloc %dkb\n", mem.TotalAlloc/1024)
-		log.Printf("mem.HeapAlloc %dkb\n", mem.HeapAlloc/1024)
-		log.Printf("mem.HeapSys %dkb\n", mem.HeapSys/1024)
-		log.Println("---------------------------")
-		options.offset = offset
-		return t.List(listPtr, options)
+	for {
+		container := makeResponseContainer(listPtr)
+		bytes, err := t.client.Request("GET", t.makePath(""), options)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(bytes, container.Interface())
+		if err != nil {
+			return err
+		}
+		appendRecordsToList(listPtr, container)
+		options.offset = getOffset(container)
+		if options.offset == "" {
+			break
+		}
 	}
 	return nil
 }

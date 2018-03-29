@@ -19,6 +19,7 @@ import (
 var (
 	record = flag.Bool("record", false, "wiretap new outgoing requests")
 	check  = flag.Bool("check", false, "check the value")
+	memory = flag.Bool("memory", false, "perform the memory test")
 )
 
 /* Types */
@@ -65,6 +66,32 @@ type CreateDeleteRecord struct {
 }
 
 /* Tests */
+func TestMemory(t *testing.T) {
+	type MemTestRecord struct {
+		Record
+		Fields struct {
+			Words string `json:"words"`
+		}
+	}
+
+	if *memory == false {
+		t.Skip("skipping memory test")
+	}
+
+	var (
+		client      = makeClient()
+		table       = client.Table("MemTest")
+		wordRecords = []MemTestRecord{}
+	)
+
+	if err := table.List(&wordRecords, nil); err != nil {
+		t.Fatal("could not get list", err)
+	}
+
+	if len(wordRecords) != 1400 {
+		t.Fatal("expected 1400 records")
+	}
+}
 
 func TestListArgValidation(t *testing.T) {
 	type testinputs struct {
