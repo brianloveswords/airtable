@@ -2,7 +2,6 @@ package airtable
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"strings"
@@ -89,7 +88,7 @@ func (o Options) Encode() string {
 	// field name.
 	if len(o.Sort) != 0 {
 		for i, sort := range o.Sort {
-			field, direction := getFieldName(sort[0], o.typ), sort[1]
+			field, direction := getFieldJSONName(sort[0], o.typ), sort[1]
 			sortstr := fmt.Sprintf("%s=%s&%s=%s",
 				esc(fmt.Sprintf("sort[%d][field]", i)),
 				esc(field),
@@ -102,7 +101,7 @@ func (o Options) Encode() string {
 
 	if len(o.Fields) != 0 {
 		for i, name := range o.Fields {
-			field := getFieldName(name, o.typ)
+			field := getFieldJSONName(name, o.typ)
 			fieldstr := fmt.Sprintf("%s=%s",
 				esc(fmt.Sprintf("fields[%d]", i)),
 				esc(field),
@@ -115,13 +114,11 @@ func (o Options) Encode() string {
 	return query
 }
 
-func getFieldName(n string, t reflect.Type) string {
-	field := n
-
+func getFieldJSONName(field string, t reflect.Type) string {
 	fields, _ := t.FieldByName("Fields")
-	f, ok := fields.Type.FieldByName(n)
+	f, ok := fields.Type.FieldByName(field)
 	if !ok {
-		log.Fatalf("could not sort by %s: no such field in %s", field, t.String())
+		panic(fmt.Errorf("could not sort by %s: no such field in %s", field, t))
 	}
 	if json, ok := f.Tag.Lookup("json"); ok {
 		field = json
