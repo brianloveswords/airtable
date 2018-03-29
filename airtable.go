@@ -293,7 +293,6 @@ func validateRecordArg(recordPtr interface{}) {
 	if !ok {
 		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Fields'"))
 	}
-
 	fieldsKind := fields.Type.Kind()
 	if fieldsKind != reflect.Struct {
 		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Fields' that is a struct, got %s", fieldsKind))
@@ -304,7 +303,6 @@ func validateRecordArg(recordPtr interface{}) {
 	if !ok {
 		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'ID'"))
 	}
-
 	idKind := id.Type.Kind()
 	if idKind != reflect.String {
 		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'ID' that is a string, got %s", idKind))
