@@ -77,7 +77,7 @@ func Example() {
 		Filter: `{Rating} < 3`,
 	})
 	for _, badBook := range badBooks {
-		fmt.Println("deleting", badBook.Fields.Title)
+		fmt.Println("deleting", badBook)
 		books.Delete(&badBook)
 	}
 }
