@@ -65,6 +65,20 @@ type CreateDeleteRecord struct {
 
 /* Tests */
 
+func TestListPanic(t *testing.T) {
+	client := makeClient()
+	table := client.Table("!panic!")
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered:", r)
+		} else {
+			t.Fatal("expected panic")
+		}
+	}()
+	s := "whataver"
+	table.List(&s, nil)
+}
+
 func TestCreateDeleteRecord(t *testing.T) {
 	client := makeClient()
 	table := client.Table("Create/Delete Test")

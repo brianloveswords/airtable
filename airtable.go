@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"reflect"
 	"strings"
@@ -20,12 +19,22 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-var limiter = ratelimit.New(5) // per second
-
-const (
-	defaultRootURL = "https://api.airtable.com"
-	defaultVersion = "v0"
+var (
+	DefaultRootURL    = "https://api.airtable.com"
+	DefaultVersion    = "v0"
+	DefaultHTTPClient = http.DefaultClient
+	DefaultLimiter    = RateLimiter(5) // per second
 )
+
+// RateLimiter makes a new rate limiter using n as the number of
+// requests per second that is allowed. If 0 is passed, the limiter will
+// be unlimited.
+func RateLimiter(n int) ratelimit.Limiter {
+	if n == 0 {
+		return ratelimit.NewUnlimited()
+	}
+	return ratelimit.New(n)
+}
 
 // Client represents an interface to communicate with the Airtable API.
 //
@@ -35,18 +44,21 @@ const (
 // - BaseID: base this client will operate against. Requests will panic
 // if this not set.
 //
-// - Version: version of the API to use. Defaults to "v0".
+// - Version: version of the API to use.
 //
-// - RootURL: root URL to use. defaults to "https://api.airtable.com"
+// - RootURL: root URL to use.
 //
-// - HTTPClient: http.Client instance to use. Defaults to
+// - HTTPClient: http.Client instance to use.
 // http.DefaultClient
+//
+// - Limit: max requests to make per second.
 type Client struct {
 	APIKey     string
 	BaseID     string
 	Version    string
 	RootURL    string
 	HTTPClient *http.Client
+	Limiter    ratelimit.Limiter
 }
 
 // Request makes an HTTP request to the Airtable API without a body. See
@@ -57,6 +69,18 @@ func (c *Client) Request(
 	options QueryEncoder,
 ) ([]byte, error) {
 	return c.RequestWithBody(method, endpoint, options, http.NoBody)
+}
+
+// ErrClientRequest is returned when the client runs into
+// problems making a request.
+type ErrClientRequest struct {
+	Err    error
+	Method string
+	URL    string
+}
+
+func (e ErrClientRequest) Error() string {
+	return fmt.Sprintf("airtable client request error: %s %s: %s", e.Method, e.URL, e.Err)
 }
 
 // RequestWithBody makes an HTTP request to the Airtable API. endpoint
@@ -73,7 +97,7 @@ func (c *Client) RequestWithBody(
 ) ([]byte, error) {
 	var err error
 
-	// will panic if the client isn't setup correctly to make a request
+	// finish setup or panic if the client isn't configured correctly
 	c.checkSetup()
 
 	if options == nil {
@@ -83,29 +107,38 @@ func (c *Client) RequestWithBody(
 	req, err := http.NewRequest(method, url, body)
 
 	if err != nil {
-		return nil, err
+		return nil, ErrClientRequest{
+			Err:    err,
+			URL:    url,
+			Method: method,
+		}
 	}
 
-	req.Header = http.Header{}
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
-	req.Header.Add("Content-Type", "application/json")
+	c.setupHeader(req)
 
-	if os.Getenv("AIRTABLE_NO_LIMIT") == "" {
-		limiter.Take()
-	}
+	// adhere to the rate limit
+	c.Limiter.Take()
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, ErrClientRequest{
+			Err:    err,
+			URL:    url,
+			Method: method,
+		}
 	}
 
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, ErrClientRequest{
+			Err:    err,
+			URL:    url,
+			Method: method,
+		}
 	}
 
 	if err = checkErrorResponse(bytes); err != nil {
-		return bytes, ErrClientRequestError{
+		return bytes, ErrClientRequest{
 			Err:    err,
 			URL:    url,
 			Method: method,
@@ -123,6 +156,16 @@ func (c *Client) Table(name string) Table {
 	}
 }
 
+func (c *Client) getLimiter() ratelimit.Limiter {
+	return c.Limiter
+}
+
+func (c *Client) setupHeader(r *http.Request) {
+	r.Header = http.Header{}
+	r.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
+	r.Header.Add("Content-Type", "application/json")
+}
+
 func (c *Client) checkSetup() {
 	if c.BaseID == "" {
 		panic("airtable: Client missing BaseID")
@@ -131,13 +174,16 @@ func (c *Client) checkSetup() {
 		panic("airtable: Client missing APIKey")
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = http.DefaultClient
+		c.HTTPClient = DefaultHTTPClient
 	}
 	if c.Version == "" {
-		c.Version = defaultVersion
+		c.Version = DefaultVersion
 	}
 	if c.RootURL == "" {
-		c.RootURL = defaultRootURL
+		c.RootURL = DefaultRootURL
+	}
+	if c.Limiter == nil {
+		c.Limiter = DefaultLimiter
 	}
 }
 
@@ -147,18 +193,6 @@ func (c *Client) makeURL(resource string, options QueryEncoder) string {
 	uri := fmt.Sprintf("%s/%s/%s/%s?%s",
 		c.RootURL, c.Version, c.BaseID, p, q)
 	return uri
-}
-
-// ErrClientRequestError is returned when the client runs into
-// problems making a request.
-type ErrClientRequestError struct {
-	Err    error
-	Method string
-	URL    string
-}
-
-func (e ErrClientRequestError) Error() string {
-	return fmt.Sprintf("client request error: %s %s: %s", e.Method, e.URL, e.Err)
 }
 
 type genericErrorResponse struct {
@@ -201,11 +235,11 @@ func NewRecord(container interface{}, data Fields) {
 		f := fields.FieldByName(k)
 		val := reflect.ValueOf(v)
 		if !f.IsValid() {
-			errstr := fmt.Sprintf("cannot find field %s.%s", typ, k)
+			errstr := fmt.Sprintf("airtable.NewRecord: cannot find field %s.%s", typ, k)
 			panic(errstr)
 		}
 		if fkind, vkind := f.Kind(), val.Kind(); fkind != vkind {
-			errstr := fmt.Sprintf("type error setting %s.%s: %s != %s", typ, k, fkind, vkind)
+			errstr := fmt.Sprintf("airtable.NewRecord: type error setting %s.%s: %s != %s", typ, k, fkind, vkind)
 			panic(errstr)
 		}
 		f.Set(val)
@@ -236,13 +270,16 @@ func (t *Table) Get(id string, recordPtr interface{}) error {
 
 // Update sends the updated record pointed to by recordPtr to the table
 func (t *Table) Update(recordPtr interface{}) error {
+	// panic for getID and getJSONBody errors because it's an upstream
+	// programming error that needs to be fixed, not a user input error
+	// or a network condition.
 	id, err := getID(recordPtr)
 	if err != nil {
-		return err
+		panic(fmt.Errorf("airtable.Table#Update: unable get record ID (%s)", err))
 	}
 	body, err := getJSONBody(recordPtr)
 	if err != nil {
-		return err
+		panic(fmt.Errorf("airtable.Table#Update: unable to create JSON (%s)", err))
 	}
 	_, err = t.client.RequestWithBody("PATCH", t.makePath(id), Options{}, body)
 	if err != nil {
@@ -254,11 +291,18 @@ func (t *Table) Update(recordPtr interface{}) error {
 // Create makes a new record in the table using the record pointed to by
 // recordPtr. On success, updates the ID and CreatedTime of the object
 // pointed to by recordPtr.
+//
+// recordPtr MUST have a Fields field that is a struct that can be
+// marshaled to JSON or this method will panic.
 func (t *Table) Create(recordPtr interface{}) error {
 	body, err := getJSONBody(recordPtr)
 	if err != nil {
-		return err
+		// panic here because it's an upstream programming error that
+		// needs to be fixed, not a user input error or a network
+		// condition.
+		panic(fmt.Errorf("airtable.Table#Create: unable to create JSON (%s)", err))
 	}
+
 	res, err := t.client.RequestWithBody("POST", t.makePath(""), Options{}, body)
 	if err != nil {
 		return err
@@ -271,21 +315,59 @@ func (t *Table) Create(recordPtr interface{}) error {
 func (t *Table) Delete(recordPtr interface{}) error {
 	id, err := getID(recordPtr)
 	if err != nil {
-		return err
+		panic(fmt.Sprintf("airtable.Table#Delete: could not get ID (%s)", err))
 	}
 	res, err := t.client.Request("DELETE", t.makePath(id), Options{})
 	if err != nil {
-		return err
+		return fmt.Errorf("airtable.Table#Delete: request error %s", err)
 	}
 	deleted := deleteResponse{}
 	if err := json.Unmarshal(res, &deleted); err != nil {
-		return err
+		return fmt.Errorf("airtable.Table#Delete: could not unpack request %s", err)
 	}
 	if !deleted.Deleted {
-		return fmt.Errorf("error: did not delete %s", res)
+		return fmt.Errorf("airtable.Table#Delete: did not delete, %s", res)
 	}
 	markAsDeleted(recordPtr)
 	return nil
+}
+
+func makeResponseContainer(listPtr interface{}) reflect.Value {
+	responseType := reflect.StructOf([]reflect.StructField{
+		{Name: "Records", Type: reflect.TypeOf(listPtr).Elem()},
+		{Name: "Offset", Type: reflect.TypeOf("")},
+	})
+	return reflect.New(responseType)
+}
+
+func extractOffset(listResponseContainer reflect.Value) string {
+	return listResponseContainer.Elem().FieldByName("Offset").String()
+}
+
+func extractRecordsToPtr(container reflect.Value, listPtr interface{}) {
+	recordList := container.Elem().FieldByName("Records")
+	list := reflect.ValueOf(listPtr).Elem()
+	for i := 0; i < recordList.Len(); i++ {
+		entry := recordList.Index(i)
+		list = reflect.Append(list, entry)
+	}
+	reflect.ValueOf(listPtr).Elem().Set(list)
+}
+
+func getRecordType(listPtr interface{}) reflect.Type {
+	return reflect.TypeOf(listPtr).Elem().Elem()
+}
+
+func validateListPtr(listPtr interface{}) {
+	// must be:
+	// - a pointer
+	// - to a slice
+	// - whose elements are records
+	listPtrKind := reflect.TypeOf(listPtr).Kind()
+	if listPtrKind != reflect.Ptr {
+		panic(fmt.Errorf("listPtr must be a pointer, got %s", listPtrKind))
+	}
+	fmt.Println("validateListPtr:", listPtrKind)
 }
 
 // List queries the table for list of records and stores it in the
@@ -294,39 +376,28 @@ func (t *Table) Delete(recordPtr interface{}) error {
 // be overriden by using the MaxRecords option. See Options for a
 // complete list of the options that are supported.
 func (t *Table) List(listPtr interface{}, options *Options) error {
+	validateListPtr(listPtr)
+
 	if options == nil {
 		options = &Options{}
 	}
 
-	oneRecord := reflect.TypeOf(listPtr).Elem().Elem()
-	options.typ = oneRecord
+	options.typ = getRecordType(listPtr)
 
 	bytes, err := t.client.Request("GET", t.makePath(""), options)
 	if err != nil {
 		return err
 	}
 
-	responseType := reflect.StructOf([]reflect.StructField{
-		{Name: "Records", Type: reflect.TypeOf(listPtr).Elem()},
-		{Name: "Offset", Type: reflect.TypeOf("")},
-	})
-
-	container := reflect.New(responseType)
+	container := makeResponseContainer(listPtr)
 	err = json.Unmarshal(bytes, container.Interface())
 	if err != nil {
 		return err
 	}
 
-	recordList := container.Elem().FieldByName("Records")
-	list := reflect.ValueOf(listPtr).Elem()
-	for i := 0; i < recordList.Len(); i++ {
-		entry := recordList.Index(i)
-		list = reflect.Append(list, entry)
-	}
-	reflect.ValueOf(listPtr).Elem().Set(list)
+	extractRecordsToPtr(container, listPtr)
 
-	offset := container.Elem().FieldByName("Offset").String()
-	if offset != "" {
+	if offset := extractOffset(container); offset != "" {
 		options.offset = offset
 		return t.List(listPtr, options)
 	}
@@ -347,8 +418,8 @@ func markAsDeleted(recordPtr interface{}) {
 	reflect.ValueOf(recordPtr).Elem().FieldByName("CreatedTime").Set(emptyTime)
 }
 
-func getJSONBody(r interface{}) (io.Reader, error) {
-	f, err := getFields(r)
+func getJSONBody(recordPtr interface{}) (io.Reader, error) {
+	f, err := getFields(recordPtr)
 	if err != nil {
 		return nil, err
 	}
@@ -361,8 +432,8 @@ func getJSONBody(r interface{}) (io.Reader, error) {
 	return body, nil
 }
 
-func getFields(e interface{}) (interface{}, error) {
-	fields := reflect.ValueOf(e).Elem().FieldByName("Fields")
+func getFields(recordPtr interface{}) (interface{}, error) {
+	fields := reflect.ValueOf(recordPtr).Elem().FieldByName("Fields")
 	if !fields.IsValid() {
 		return nil, errors.New("getFields: missing Fields")
 	}
