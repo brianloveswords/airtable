@@ -223,13 +223,16 @@ type Fields map[string]interface{}
 
 // NewRecord is a convenience method for applying a map of fields to a
 // record container when the Fields struct is anonymous.
-func NewRecord(container interface{}, data Fields) {
+func NewRecord(recordPtr interface{}, data Fields) {
+	// panic if the recordPtr doesn't point to a record.
+	validateRecordArg(recordPtr)
+
 	// iterating over the container fields and applying those keys to
 	// the passed in fields would be "safer", but it could possibly
 	// mask user error if data is the complete wrong fit. instead we
 	// can iterate over data and apply that to the container, and fail
 	// early if there isn't a matching field.
-	ref := reflect.ValueOf(container).Elem()
+	ref := reflect.ValueOf(recordPtr).Elem()
 	typ := ref.Type()
 	fields := ref.FieldByName("Fields")
 	for k, v := range data {
