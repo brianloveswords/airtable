@@ -161,10 +161,6 @@ func (c *Client) Table(name string) Table {
 	}
 }
 
-func (c *Client) getLimiter() ratelimit.Limiter {
-	return c.Limiter
-}
-
 func (c *Client) makeHeader(r *http.Request) {
 	r.Header = http.Header{}
 	r.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
@@ -567,8 +563,4 @@ func getFields(ptr interface{}) interface{} {
 
 func getID(ptr interface{}) string {
 	return reflect.ValueOf(ptr).Elem().FieldByName("ID").String()
-}
-
-func debugLog(s string, a ...interface{}) {
-	fmt.Printf("DEBUG: "+s+"\n", a...)
 }
