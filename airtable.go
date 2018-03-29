@@ -120,7 +120,8 @@ func (c *Client) RequestWithBody(
 
 	c.makeHeader(req)
 
-	// adhere to the rate limit
+	// Take() will block until we can safely make the next request
+	// without going over the rate limit
 	c.Limiter.Take()
 
 	resp, err := c.HTTPClient.Do(req)
