@@ -5,14 +5,15 @@ package airtable
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"reflect"
+	"runtime"
 	"strings"
 	"time"
 
@@ -34,6 +35,11 @@ func RateLimiter(n int) ratelimit.Limiter {
 		return ratelimit.NewUnlimited()
 	}
 	return ratelimit.New(n)
+}
+
+// QueryEncoder encodes options to a query string.
+type QueryEncoder interface {
+	Encode() string
 }
 
 // Client represents an interface to communicate with the Airtable API.
@@ -114,7 +120,7 @@ func (c *Client) RequestWithBody(
 		}
 	}
 
-	c.setupHeader(req)
+	c.makeHeader(req)
 
 	// adhere to the rate limit
 	c.Limiter.Take()
@@ -148,7 +154,8 @@ func (c *Client) RequestWithBody(
 	return bytes, nil
 }
 
-// Table returns a new Table
+// Table returns a new Table that will use this client and operate
+// against the table with the passed in name
 func (c *Client) Table(name string) Table {
 	return Table{
 		client: c,
@@ -160,7 +167,7 @@ func (c *Client) getLimiter() ratelimit.Limiter {
 	return c.Limiter
 }
 
-func (c *Client) setupHeader(r *http.Request) {
+func (c *Client) makeHeader(r *http.Request) {
 	r.Header = http.Header{}
 	r.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
 	r.Header.Add("Content-Type", "application/json")
@@ -268,16 +275,56 @@ func (t *Table) Get(id string, recordPtr interface{}) error {
 	return json.Unmarshal(bytes, recordPtr)
 }
 
+func validateRecordArg(recordPtr interface{}) {
+	// must be:
+	// ... a pointer
+	typ := reflect.TypeOf(recordPtr)
+	recordPtrKind := typ.Kind()
+	if recordPtrKind != reflect.Ptr {
+		panic(fmt.Errorf("airtable type error: recordPtr must be a pointer, got %s", recordPtrKind))
+	}
+
+	// ... to a struct
+	record := typ.Elem()
+	recordKind := record.Kind()
+	if recordKind != reflect.Struct {
+		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct, got %s", recordKind))
+	}
+
+	// ... which has a field named "Fields" that's a struct
+	fields, ok := record.FieldByName("Fields")
+	if !ok {
+		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Fields'"))
+	}
+
+	fieldsKind := fields.Type.Kind()
+	if fieldsKind != reflect.Struct {
+		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Fields' that is a struct, got %s", fieldsKind))
+	}
+
+	// ... and a field named "ID" that's a string
+	id, ok := record.FieldByName("ID")
+	if !ok {
+		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'ID'"))
+	}
+
+	idKind := id.Type.Kind()
+	if idKind != reflect.String {
+		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'ID' that is a string, got %s", idKind))
+	}
+}
+
 // Update sends the updated record pointed to by recordPtr to the table
 func (t *Table) Update(recordPtr interface{}) error {
-	// panic for getID and getJSONBody errors because it's an upstream
-	// programming error that needs to be fixed, not a user input error
-	// or a network condition.
-	id, err := getID(recordPtr)
-	if err != nil {
-		panic(fmt.Errorf("airtable.Table#Update: unable get record ID (%s)", err))
-	}
-	body, err := getJSONBody(recordPtr)
+	// panic if the recordPtr doesn't point to a record.
+	validateRecordArg(recordPtr)
+
+	id := getID(recordPtr)
+
+	// panic makeJSONBody errors because it's an upstream programming
+	// error that needs to be fixed, not a user input error or a network
+	// condition.
+	body, err := makeJSONBody(recordPtr)
 	if err != nil {
 		panic(fmt.Errorf("airtable.Table#Update: unable to create JSON (%s)", err))
 	}
@@ -295,11 +342,15 @@ func (t *Table) Update(recordPtr interface{}) error {
 // recordPtr MUST have a Fields field that is a struct that can be
 // marshaled to JSON or this method will panic.
 func (t *Table) Create(recordPtr interface{}) error {
-	body, err := getJSONBody(recordPtr)
+	// panic if the recordPtr doesn't point to a record.
+	validateRecordArg(recordPtr)
+
+	body, err := makeJSONBody(recordPtr)
+
+	// panic if we can't create the JSON because it's an upstream
+	// programming error that needs to be fixed, not a user input error
+	// or a network condition.
 	if err != nil {
-		// panic here because it's an upstream programming error that
-		// needs to be fixed, not a user input error or a network
-		// condition.
 		panic(fmt.Errorf("airtable.Table#Create: unable to create JSON (%s)", err))
 	}
 
@@ -313,10 +364,11 @@ func (t *Table) Create(recordPtr interface{}) error {
 // Delete removes a record from the table. On success, ID and
 // CreatedTime of the object pointed to by recordPtr are removed.
 func (t *Table) Delete(recordPtr interface{}) error {
-	id, err := getID(recordPtr)
-	if err != nil {
-		panic(fmt.Sprintf("airtable.Table#Delete: could not get ID (%s)", err))
-	}
+	// panic if the recordPtr doesn't point to a record.
+	validateRecordArg(recordPtr)
+
+	id := getID(recordPtr)
+
 	res, err := t.client.Request("DELETE", t.makePath(id), Options{})
 	if err != nil {
 		return fmt.Errorf("airtable.Table#Delete: request error %s", err)
@@ -332,33 +384,53 @@ func (t *Table) Delete(recordPtr interface{}) error {
 	return nil
 }
 
+// makeResponseContainer returns a new struct based on listPtr that can
+// contain the response from a list query to an airtable. For example:
+//
+//  type BookRecord struct {
+//		airtable.Record
+//		Fields struct {
+//			Title string
+//			Author string
+//		}
+//  }
+//  listPtr := &[]BookRecord{}
+//
+// Passing the above listPtr to makeResponseContainer will dynamically
+// create a struct that looks like this:
+//
+//  struct {
+//		Records []BookRecord
+//		Offset  string
+//  }
 func makeResponseContainer(listPtr interface{}) reflect.Value {
 	responseType := reflect.StructOf([]reflect.StructField{
 		{Name: "Records", Type: reflect.TypeOf(listPtr).Elem()},
-		{Name: "Offset", Type: reflect.TypeOf("")},
+		{Name: "Offset", Type: reflect.TypeOf("string")},
 	})
 	return reflect.New(responseType)
 }
 
-func extractOffset(listResponseContainer reflect.Value) string {
+func getOffset(listResponseContainer reflect.Value) string {
 	return listResponseContainer.Elem().FieldByName("Offset").String()
 }
 
-func extractRecordsToPtr(container reflect.Value, listPtr interface{}) {
-	recordList := container.Elem().FieldByName("Records")
-	list := reflect.ValueOf(listPtr).Elem()
-	for i := 0; i < recordList.Len(); i++ {
-		entry := recordList.Index(i)
-		list = reflect.Append(list, entry)
-	}
-	reflect.ValueOf(listPtr).Elem().Set(list)
+func appendRecordsToList(listPtr interface{}, results reflect.Value) {
+	var (
+		original = reflect.ValueOf(listPtr).Elem()
+		records  = results.Elem().FieldByName("Records")
+		updated  = reflect.AppendSlice(original, records)
+	)
+	original.Set(updated)
 }
 
-func getRecordType(listPtr interface{}) reflect.Type {
-	return reflect.TypeOf(listPtr).Elem().Elem()
+// getRecordType will get the base element type from a pointer to a
+// slice. For example: getRecordType(*[]string) -> string
+func getRecordType(ps interface{}) reflect.Type {
+	return reflect.TypeOf(ps).Elem().Elem()
 }
 
-func validateListPtr(listPtr interface{}) {
+func validateListArg(listPtr interface{}) {
 	// must be:
 	// ... a pointer
 	typ := reflect.TypeOf(listPtr)
@@ -409,14 +481,32 @@ func validateListPtr(listPtr interface{}) {
 // all of the records until there are no more left to get, but this can
 // be overriden by using the MaxRecords option. See Options for a
 // complete list of the options that are supported.
+//
+// listPtr must be a pointer to a slice of records, which are structs
+// that contain, at a minimum, `ID string` and `Fields struct {...}`
+// fields. For example:
+//
+//  type BookRecord struct {
+//		airtable.Record // provides ID and CreatedTime
+//		Fields struct {
+//			Title string
+//			Author string
+//		}
+//  }
+//  listPtr := &[]BookRecord{}
+//
+// This will be validated and cause a panic at runtime if listPtr is the
+// wrong type.
 func (t *Table) List(listPtr interface{}, options *Options) error {
-	validateListPtr(listPtr)
+	validateListArg(listPtr)
 
 	if options == nil {
 		options = &Options{}
 	}
 
-	options.typ = getRecordType(listPtr)
+	// for "sort" and "fields" we need to have access to the type of
+	// record so we can look up the JSON names of the fields.
+	options.setType(getRecordType(listPtr))
 
 	bytes, err := t.client.Request("GET", t.makePath(""), options)
 	if err != nil {
@@ -429,9 +519,26 @@ func (t *Table) List(listPtr interface{}, options *Options) error {
 		return err
 	}
 
-	extractRecordsToPtr(container, listPtr)
+	appendRecordsToList(listPtr, container)
 
-	if offset := extractOffset(container); offset != "" {
+	// when there are more records that match the query, airtable will
+	// include an "offset" field in the response. if that exists we
+	// recur with the offset as an added option until airtable stops
+	// returning offsets.
+	//
+	// for pro airtable plans, max records per base is 50,000 and
+	// airtable returns 100 results per page, so that is a maximum stack
+	// depth of 500 for this function, and each of those stacks can
+	// potentially be holding onto 100 copies of the record because of
+	// container, so we end up holding onto
+	if offset := getOffset(container); offset != "" {
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		log.Printf("mem.Alloc %dkb\n", mem.Alloc/1024)
+		log.Printf("mem.TotalAlloc %dkb\n", mem.TotalAlloc/1024)
+		log.Printf("mem.HeapAlloc %dkb\n", mem.HeapAlloc/1024)
+		log.Printf("mem.HeapSys %dkb\n", mem.HeapSys/1024)
+		log.Println("---------------------------")
 		options.offset = offset
 		return t.List(listPtr, options)
 	}
@@ -439,24 +546,32 @@ func (t *Table) List(listPtr interface{}, options *Options) error {
 }
 
 func (t *Table) makePath(id string) string {
-	n := url.PathEscape(t.name)
+	name := url.PathEscape(t.name)
 	if id == "" {
-		return n
+		return name
 	}
-	return path.Join(n, id)
+	return path.Join(name, id)
 }
 
 func markAsDeleted(recordPtr interface{}) {
-	emptyTime := reflect.ValueOf(time.Time{})
-	reflect.ValueOf(recordPtr).Elem().FieldByName("ID").SetString("")
-	reflect.ValueOf(recordPtr).Elem().FieldByName("CreatedTime").Set(emptyTime)
+	var (
+		record   = reflect.ValueOf(recordPtr).Elem()
+		zeroTime = reflect.ValueOf(time.Time{})
+		id       = record.FieldByName("ID")
+		created  = record.FieldByName("CreatedTime")
+	)
+	if id.IsValid() {
+		id.SetString("")
+	}
+	if created.IsValid() {
+		created.Set(zeroTime)
+	}
 }
 
-func getJSONBody(recordPtr interface{}) (io.Reader, error) {
-	f, err := getFields(recordPtr)
-	if err != nil {
-		return nil, err
-	}
+// makeJSONBody returns an io.Reader prepared for use in either Create
+// or Update operations.
+func makeJSONBody(recordPtr interface{}) (io.Reader, error) {
+	f := getFields(recordPtr)
 	b, err := json.Marshal(f)
 	if err != nil {
 		return nil, err
@@ -466,33 +581,14 @@ func getJSONBody(recordPtr interface{}) (io.Reader, error) {
 	return body, nil
 }
 
-func getFields(recordPtr interface{}) (interface{}, error) {
-	fields := reflect.ValueOf(recordPtr).Elem().FieldByName("Fields")
-	if !fields.IsValid() {
-		return nil, errors.New("getFields: missing Fields")
-	}
-	if fields.Kind() != reflect.Struct {
-		return nil, errors.New("getFields: Fields not a struct")
-	}
-	return fields.Interface(), nil
+func getFields(ptr interface{}) interface{} {
+	return reflect.ValueOf(ptr).Elem().FieldByName("Fields").Interface()
 }
 
-func getID(e interface{}) (string, error) {
-	id := reflect.ValueOf(e).Elem().FieldByName("ID")
-	if !id.IsValid() {
-		return "", errors.New("getID: missing ID")
-	}
-	if id.Kind() != reflect.String {
-		return "", errors.New("getID: ID not a string")
-	}
-	return id.String(), nil
+func getID(ptr interface{}) string {
+	return reflect.ValueOf(ptr).Elem().FieldByName("ID").String()
 }
 
 func debugLog(s string, a ...interface{}) {
 	fmt.Printf("DEBUG: "+s+"\n", a...)
-}
-
-// QueryEncoder encodes options to a query string.
-type QueryEncoder interface {
-	Encode() string
 }

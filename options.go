@@ -54,6 +54,10 @@ type Options struct {
 // Sort represents a pair of strings: a field and a SortType
 type Sort [][2]string
 
+func (o *Options) setType(t reflect.Type) {
+	o.typ = t
+}
+
 // Encode turns the Options object into a query string for use in URLs.
 func (o Options) Encode() string {
 	q := []string{}

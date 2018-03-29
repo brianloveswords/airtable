@@ -122,6 +122,61 @@ func TestListArgValidation(t *testing.T) {
 	}
 }
 
+func TestRecordArgValidation(t *testing.T) {
+	type testinputs struct {
+		name string
+		arg  func() interface{}
+	}
+
+	tests := []testinputs{
+		{"not a pointer", func() interface{} { return "string type" }},
+		{"not a pointer to a struct", func() interface{} {
+			s := "hi"
+			return &s
+		}},
+		{"struct doesn't have Fields", func() interface{} {
+			type invalidstruct struct{ nope string }
+			return &invalidstruct{}
+		}},
+		{"struct Fields is wrong type", func() interface{} {
+			type invalidstruct struct{ Fields string }
+			return &invalidstruct{}
+		}},
+		{"struct ID is missing", func() interface{} {
+			type invalidstruct struct{ Fields struct{} }
+			return &invalidstruct{}
+		}},
+		{"struct ID is wrong type", func() interface{} {
+			type invalidstruct struct {
+				Fields struct{}
+				ID     bool
+			}
+			return &invalidstruct{}
+		}},
+	}
+
+	var (
+		client = makeClient()
+		table  = client.Table("!panic!")
+	)
+
+	for _, test := range tests {
+		t.Run("invalid type: "+test.name, func(tt *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					tt.Fatal("expected panic")
+				}
+				msg := r.(error)
+				if !strings.Contains(msg.Error(), "type error") {
+					tt.Fatal("expected type error")
+				}
+			}()
+			table.Update(test.arg())
+		})
+	}
+}
+
 func TestCreateDeleteRecord(t *testing.T) {
 	client := makeAlwaysOnClient()
 	table := client.Table("Create/Delete Test")
