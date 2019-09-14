@@ -123,6 +123,8 @@ func getFieldJSONName(field string, t reflect.Type) string {
 	if json, ok := f.Tag.Lookup("json"); ok {
 		field = json
 	}
+	//Strip omitempty if it exists
+	field = strings.Replace(field, ",omitempty", "", -1)
 	return field
 }
 
