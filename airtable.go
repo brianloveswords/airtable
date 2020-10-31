@@ -299,6 +299,15 @@ func validateRecordArg(recordPtr interface{}) {
 		panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Fields' that is a struct, got %s", fieldsKind))
 	}
 
+	// ... an optional field named "Typecast" that's a bool
+	typecast, ok := record.FieldByName("Typecast")
+	if ok {
+		typecastKind := typecast.Type.Kind()
+		if typecastKind != reflect.Bool {
+			panic(fmt.Errorf("airtable type error: recordPtr must point to a struct with field 'Typecast' that is a bool, got %s", typecastKind))
+		}
+	}
+
 	// ... and a field named "ID" that's a string
 	id, ok := record.FieldByName("ID")
 	if !ok {
@@ -554,13 +563,21 @@ func makeJSONBody(recordPtr interface{}) (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	jsonstr := fmt.Sprintf(`{"fields": %s}`, b)
+	t := getTypecast(recordPtr)
+	jsonstr := fmt.Sprintf(`{"fields": %s, "typecast": %t}`, b, t)
 	body := strings.NewReader(jsonstr)
 	return body, nil
 }
 
 func getFields(ptr interface{}) interface{} {
 	return reflect.ValueOf(ptr).Elem().FieldByName("Fields").Interface()
+}
+
+func getTypecast(ptr interface{}) interface{} {
+	if reflect.ValueOf(ptr).Elem().FieldByName("Typecast").IsValid() {
+		return reflect.ValueOf(ptr).Elem().FieldByName("Typecast").Interface()
+	}
+	return false
 }
 
 func getID(ptr interface{}) string {
